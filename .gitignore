@@ -1,0 +1,48 @@
+# ── Dépendances npm ──────────────────────────────────────────────
+node_modules/
+
+# ── Build Angular ─────────────────────────────────────────────────
+dist/
+tmp/
+out-tsc/
+bazel-out/
+
+# ── Cache Angular CLI ─────────────────────────────────────────────
+.angular/
+
+# ── Fichiers d'environnement sensibles ───────────────────────────
+# Ne jamais versionner les clés API Google Sheets
+src/environments/environment.prod.ts
+src/environments/environment.*.local.ts
+
+# ── Données de test (ne pas versionner en prod) ───────────────────
+src/seed-test.ts
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# ── IDE ───────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── Tests ─────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── PWA Service Worker (généré au build) ──────────────────────────
+ngsw-worker.js
+safety-worker.js
+worker-basic.min.js
