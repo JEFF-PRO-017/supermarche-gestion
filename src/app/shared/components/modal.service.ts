@@ -33,7 +33,7 @@ export class ModalService {
       const el    = wrapper.firstElementChild as HTMLElement;
       const modal = new (window as any).bootstrap.Modal(el, { backdrop: 'static' });
       modal.show();
-g
+
       // Cleanup sur hide natif
       el.addEventListener('hidden.bs.modal', () => {
         resolve(undefined);
