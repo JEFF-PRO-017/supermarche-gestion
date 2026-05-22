@@ -1,41 +1,44 @@
-// confirm-modal.component.ts
-import { Component, Inject } from '@angular/core';
-import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
-import { MatButtonModule } from '@angular/material/button';
+import { Component, Input } from '@angular/core';
 
 export interface ConfirmData {
   titre: string;
   message: string;
-  labelOk?: string;      // défaut : "Confirmer"
-  couleurOk?: string;    // défaut : "btn-danger"
+  labelOk?: string;
+  couleurOk?: string;
 }
 
 @Component({
   selector: 'app-confirm-modal',
   standalone: true,
-  imports: [MatDialogModule, MatButtonModule],
   template: `
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title fw-semibold">
-          <i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>
-          {{ data.titre }}
-        </h5>
-      </div>
-      <div class="modal-body">{{ data.message }}</div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="ref.close(false)">Annuler</button>
-        <button class="btn {{ data.couleurOk ?? 'btn-danger' }}"
-                (click)="ref.close(true)">
-          {{ data.labelOk ?? 'Confirmer' }}
-        </button>
+    <div class="modal fade" tabindex="-1">
+      <div class="modal-dialog" style="max-width:380px">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <h5 class="modal-title fw-semibold">
+              <i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>
+              {{ data.titre }}
+            </h5>
+            <button type="button" class="btn-close" (click)="closeModal(false)"></button>
+          </div>
+
+          <div class="modal-body">{{ data.message }}</div>
+
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="closeModal(false)">Annuler</button>
+            <button class="btn {{ data.couleurOk ?? 'btn-danger' }}"
+                    (click)="closeModal(true)">
+              {{ data.labelOk ?? 'Confirmer' }}
+            </button>
+          </div>
+
+        </div>
       </div>
     </div>
   `,
 })
 export class ConfirmModalComponent {
-  constructor(
-    public ref: MatDialogRef<ConfirmModalComponent>,
-    @Inject(MAT_DIALOG_DATA) public data: ConfirmData
-  ) {}
+  @Input() data!: ConfirmData;
+  @Input() closeModal!: (result?: any) => void;
 }

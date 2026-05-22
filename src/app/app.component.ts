@@ -27,8 +27,8 @@ import { AuthService } from './core/services/auth.service';
       </header>
 
       <!-- Contenu principal centré max 640px -->
-      <main class="sm-container">
-        <div class="sm-page-content">
+      <main class="container">
+        <div class="page-content mt-2 mb-5">
           <router-outlet />
         </div>
       </main>

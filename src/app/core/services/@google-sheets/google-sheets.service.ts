@@ -86,7 +86,6 @@ export class GoogleSheetsService {
 
   /** Crée la feuille si elle n'existe pas encore, puis écrit les en-têtes */
   async createSheet(cfg: SheetConfig): Promise<void> {
-    debugger
     const hdrs = await this.headers();
     const file: any = await firstValueFrom(
       this.http.get(this.url(''), { headers: hdrs })

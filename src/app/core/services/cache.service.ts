@@ -74,14 +74,14 @@ export class CacheService {
   }
 
   // Incrémente le stock après réappro
-  incrementStock(code: string, qte: number) {
-    this._articles.update(l =>
-      l.map(a => a.code_article === code
-        ? { ...a, stock_actuel: a.stock_actuel + qte }
-        : a
-      )
-    );
-  }
+  // incrementStock(code: string, qte: number) {
+  //   this._articles.update(l =>
+  //     l.map(a => a.code_article === code
+  //       ? { ...a, stock_actuel: a.stock_actuel + qte }
+  //       : a
+  //     )
+  //   );
+  // }
 
   // ── Invalidation ───────────────────────────────────────────────
   invalidateAll() {

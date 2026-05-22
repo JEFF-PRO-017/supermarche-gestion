@@ -9,7 +9,7 @@
 //  - Persistance localStorage inchangée
 // ─────────────────────────────────────────────────────────────────
 import { effect, Injectable, signal } from '@angular/core';
-import { GoogleSheetsService, RowConfig, CellConfig, DeleteRowConfig ,UpdateRowConfig}
+import { GoogleSheetsService, RowConfig, CellConfig, DeleteRowConfig, UpdateRowConfig }
   from './@google-sheets/google-sheets.service';
 import { from, EMPTY, of } from 'rxjs';
 import { switchMap, map, catchError, filter, tap } from 'rxjs/operators';
@@ -24,9 +24,10 @@ export type QueuePayload =
   | DeleteRowConfig;
 
 interface QueueItem {
-  id:      string;
-  order:   QueueOrder;
+  id: string;
+  order: QueueOrder;
   payload: QueuePayload;
+  countError: number;
 }
 
 const STORAGE_KEY = 'sheets_queue';
@@ -35,16 +36,16 @@ const INTERVAL_MS = 2000;
 @Injectable({ providedIn: 'root' })
 export class SheetsQueueServiceService {
 
-  private queue    = signal<QueueItem[]>([]);
-  private online   = signal(navigator.onLine);
+  private queue = signal<QueueItem[]>([]);
+  private online = signal(navigator.onLine);
   private scheduled: ReturnType<typeof setInterval> | null = null;
-  private syncing  = false;
+  private syncing = false;
 
   constructor(private sheets: GoogleSheetsService) {
     // Restaure la file depuis localStorage au démarrage
     this.queue.set(this.load());
 
-    window.addEventListener('online',  () => this.online.set(true));
+    window.addEventListener('online', () => this.online.set(true));
     window.addEventListener('offline', () => this.online.set(false));
 
     // Persiste + démarre le scheduler à chaque changement de la file
@@ -61,7 +62,7 @@ export class SheetsQueueServiceService {
   enqueue(payload: QueuePayload, order: QueueOrder): void {
     this.queue.update(list => [
       ...list,
-      { id: crypto.randomUUID(), order, payload },
+      { id: crypto.randomUUID(), order, payload, countError: 0 },
     ]);
   }
 
@@ -69,9 +70,9 @@ export class SheetsQueueServiceService {
     this.queue.update(list => list.slice(1));
   }
 
-  peek():    QueueItem  { return this.queue()[0]; }
-  isEmpty(): boolean    { return this.queue().length === 0; }
-  size():    number     { return this.queue().length; }
+  peek(): QueueItem { return this.queue()[0]; }
+  isEmpty(): boolean { return this.queue().length === 0; }
+  size(): number { return this.queue().length; }
 
   /** Vide complètement la file sans envoyer — à utiliser avec précaution */
   clearQueue(): void {
@@ -86,7 +87,7 @@ export class SheetsQueueServiceService {
   sync(): void {
     if (this.syncing || !this.online() || this.isEmpty()) return;
     this.syncing = true;
-    const item   = this.peek();
+    const item = this.peek();
 
     of(item).pipe(
       filter(i => !!i?.order && !!i?.payload),
@@ -96,12 +97,14 @@ export class SheetsQueueServiceService {
         console.log(`✅ Queue — envoyé : ${i.order} [${i.id}]`);
       }),
       catchError(err => {
+        if (item?.countError >=5 || !item.countError) this.dequeue()// éviter de bloquer la file indéfiniment sur un élément problématique
+        else item.countError++;
         console.warn(`⚠️ Queue — échec, conservé [${item.id}] :`, err?.message ?? err);
         return EMPTY;
       }),
     ).subscribe({
       complete: () => { this.syncing = false; },
-      error:    () => { this.syncing = false; },
+      error: () => { this.syncing = false; },
     });
   }
 

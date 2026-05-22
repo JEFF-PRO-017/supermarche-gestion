@@ -1,10 +1,8 @@
-// catalogue.component.ts — liste des articles avec alertes et actions
+// catalogue.component.ts
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatDialog } from '@angular/material/dialog';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { CacheService } from '../../../core/services/cache.service';
 import { DataService } from '../../../core/services/data.service';
@@ -13,11 +11,12 @@ import { Article } from '../../../core/models/supermarche.models';
 import { ArticleFormModalComponent } from '../article-form-modal/article-form-modal.component';
 import { ReapproModalComponent } from '../../../shared/components/reapprovisionnement-modal/reapprovisionnement-modal.component';
 import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/confirm-modal.component';
+import { ModalService } from '@shared/components/modal.service';
 
 @Component({
   selector: 'app-catalogue',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatPaginatorModule, MatTooltipModule, RouterLink],
+  imports: [CommonModule, FormsModule, MatPaginatorModule, RouterLink],
   template: `
     <div>
 
@@ -33,7 +32,9 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
           </p>
         </div>
         @if (auth.isGerant()) {
-          <a routerLink="/articles/nouveau" class="btn-sm-primary" style="font-size:12px;padding:7px 12px;text-decoration:none">
+          <a routerLink="/articles/nouveau" class="btn-sm-primary"
+             style="font-size:12px;padding:7px 12px;text-decoration:none"
+             title="Créer un nouvel article">
             <i class="fa-solid fa-plus" style="margin-right:5px;font-size:11px"></i>Nouveau
           </a>
         }
@@ -78,12 +79,16 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
               <tr [style.background]="niveauAlerte(a) === 'CRITIQUE' ? '#FFF8F8' : niveauAlerte(a) === 'FAIBLE' ? '#FFFCF5' : ''">
                 <td style="padding-left:12px">
                   <div class="d-flex align-items-center gap-2">
-                    <div class="sm-avatar" [style.background]="couleur(a).bg" [style.color]="couleur(a).tc">
+                    <div class="sm-avatar"
+                         [style.background]="couleur(a).bg"
+                         [style.color]="couleur(a).tc">
                       {{ a.nom.substring(0,2).toUpperCase() }}
                     </div>
                     <div>
                       <div style="font-weight:500;font-size:13px">{{ a.nom }}</div>
-                      <span class="sm-badge {{ badgeClass(a) }}" style="font-size:10px">{{ badgeLabel(a) }}</span>
+                      <span class="sm-badge {{ badgeClass(a) }}" style="font-size:10px">
+                        {{ badgeLabel(a) }}
+                      </span>
                     </div>
                   </div>
                 </td>
@@ -93,10 +98,12 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
                   <div class="d-flex align-items-center gap-1">
                     <div class="sm-stock-bar">
                       <div class="sm-stock-fill" [style.width.%]="stockPct(a)"
-                           [style.background]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' : niveauAlerte(a) === 'FAIBLE' ? 'var(--sm-warn)' : 'var(--sm-primary)'">
+                           [style.background]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' :
+                                               niveauAlerte(a) === 'FAIBLE'   ? 'var(--sm-warn)'   : 'var(--sm-primary)'">
                       </div>
                     </div>
-                    <small [style.color]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' : niveauAlerte(a) === 'FAIBLE' ? 'var(--sm-warn)' : 'var(--sm-text)'">
+                    <small [style.color]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' :
+                                          niveauAlerte(a) === 'FAIBLE'   ? 'var(--sm-warn)'   : 'var(--sm-text)'">
                       {{ a.stock_actuel }}
                     </small>
                   </div>
@@ -106,20 +113,20 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
                     @if (auth.isGerant()) {
                       <button class="btn-icon"
                               [style.background]="niveauAlerte(a) ? 'var(--sm-primary-lt)' : ''"
-                              matTooltip="Réapprovisionner le stock"
+                              title="Réapprovisionner le stock"
                               (click)="ouvrirReappro(a)">
                         <i class="fa-solid fa-arrow-up" style="font-size:12px"
                            [style.color]="niveauAlerte(a) ? 'var(--sm-primary-dk)' : ''"></i>
                       </button>
                       <button class="btn-icon"
-                              matTooltip="Modifier cet article"
+                              title="Modifier cet article"
                               (click)="ouvrirFormulaire(a)">
                         <i class="fa-solid fa-pen" style="font-size:12px"></i>
                       </button>
                     }
                     @if (auth.isAdmin()) {
                       <button class="btn-icon" style="color:var(--sm-danger)"
-                              matTooltip="Supprimer cet article"
+                              title="Supprimer cet article"
                               (click)="supprimer(a)">
                         <i class="fa-solid fa-trash" style="font-size:12px"></i>
                       </button>
@@ -152,10 +159,10 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
   `,
 })
 export class CatalogueComponent {
-  protected cache  = inject(CacheService);
-  protected data$  = inject(DataService);
-  protected auth   = inject(AuthService);
-  private   dialog = inject(MatDialog);
+  protected cache = inject(CacheService);
+  protected data$ = inject(DataService);
+  protected auth  = inject(AuthService);
+  private modal   = inject(ModalService);
 
   recherche   = '';
   filtreStock = '';
@@ -183,8 +190,8 @@ export class CatalogueComponent {
   onPage(e: PageEvent) { this.page = e.pageIndex; this.pageSize = e.pageSize; }
 
   niveauAlerte(a: Article): 'CRITIQUE' | 'FAIBLE' | null {
-    if (a.stock_actuel <= a.seuil_alerte)        return 'CRITIQUE';
-    if (a.stock_actuel <= a.seuil_alerte * 1.5)  return 'FAIBLE';
+    if (a.stock_actuel <= a.seuil_alerte)       return 'CRITIQUE';
+    if (a.stock_actuel <= a.seuil_alerte * 1.5) return 'FAIBLE';
     return null;
   }
 
@@ -202,34 +209,30 @@ export class CatalogueComponent {
     return n === 'CRITIQUE' ? 'Rupture imminente' : n === 'FAIBLE' ? 'Stock faible' : 'En stock';
   }
 
-  // Palette de couleurs pour les avatars
   private PALETTES = [
-    {bg:'#E1F5EE',tc:'#0F6E56'},{bg:'#FAECE7',tc:'#993C1D'},{bg:'#E6F1FB',tc:'#185FA5'},
-    {bg:'#EAF3DE',tc:'#3B6D11'},{bg:'#FAEEDA',tc:'#854F0B'},{bg:'#FBEAF0',tc:'#993556'},
-    {bg:'#EEEDFE',tc:'#534AB7'},{bg:'#FCEBEB',tc:'#A32D2D'},
+    { bg:'#E1F5EE', tc:'#0F6E56' }, { bg:'#FAECE7', tc:'#993C1D' },
+    { bg:'#E6F1FB', tc:'#185FA5' }, { bg:'#EAF3DE', tc:'#3B6D11' },
+    { bg:'#FAEEDA', tc:'#854F0B' }, { bg:'#FBEAF0', tc:'#993556' },
+    { bg:'#EEEDFE', tc:'#534AB7' }, { bg:'#FCEBEB', tc:'#A32D2D' },
   ];
 
-  couleur(a: Article): {bg:string;tc:string} {
+  couleur(a: Article): { bg: string; tc: string } {
     return this.PALETTES[parseInt(a.code_article) % this.PALETTES.length] ?? this.PALETTES[0];
   }
 
-  ouvrirFormulaire(article?: Article): void {
-    this.dialog.open(ArticleFormModalComponent, {
-      width: '560px', maxWidth: '98vw',
-      data: { article }, panelClass: ['sm-modal'],
-    });
+  ouvrirFormulaire(article?: Article) {
+    this.modal.open(ArticleFormModalComponent, { article });
   }
 
-  ouvrirReappro(article: Article): void {
-    this.dialog.open(ReapproModalComponent, {
-      width: '380px', maxWidth: '98vw',
-      data: { article }, panelClass: ['sm-modal'],
-    });
+  ouvrirReappro(article: Article) {
+    this.modal.open(ReapproModalComponent, { article });
   }
 
-  supprimer(article: Article): void {
-    this.dialog.open(ConfirmModalComponent, { width: '380px',
-      data: { titre: 'Supprimer un article', message: `Supprimer définitivement « ${article.nom} » ?` },
-    }).afterClosed().subscribe(ok => { if (ok) this.data$.deleteArticle(article.code_article); });
+  async supprimer(article: Article) {
+    const ok = await this.modal.open(ConfirmModalComponent, {
+      titre:   'Supprimer un article',
+      message: `Supprimer définitivement « ${article.nom} » ?`,
+    });
+    if (ok) this.data$.deleteArticle(article.code_article);
   }
 }

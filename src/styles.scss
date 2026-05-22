@@ -1,7 +1,7 @@
 /* styles.scss — design system supermarché PWA
    Bootstrap 5 + Font Awesome déclarés dans angular.json */
 
-/* ── Tokens couleur (palette douce, lecture agréable) ────── */
+/* ── Tokens couleur ─────────────────────────────────────────── */
 :root {
   --sm-primary:    #1D9E75;
   --sm-primary-dk: #0F6E56;
@@ -31,7 +31,7 @@ body {
   text-size-adjust: 100%;
 }
 
-/* ── Conteneur max 640px centré ────────────────────────────── */
+/* ── Conteneur max 640px centré ─────────────────────────────── */
 .sm-container {
   max-width: 640px;
   margin: 0 auto;
@@ -57,7 +57,7 @@ body {
 }
 .sm-navbar-brand i { color: var(--sm-primary); }
 
-/* ── Navbar basse tablette ──────────────────────────────────── */
+/* ── Navbar basse ───────────────────────────────────────────── */
 .sm-bottom-nav {
   position: fixed;
   bottom: 0;
@@ -90,7 +90,6 @@ body {
 .sm-nav-item.active, .sm-nav-item:hover { color: var(--sm-primary); }
 .sm-nav-item i { font-size: 18px; }
 
-/* Espace pour la navbar basse */
 .sm-page-content {
   padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   padding-top: .875rem;
@@ -141,7 +140,7 @@ body {
 .sm-g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .sm-g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 
-/* ── Inputs Bootstrap surchargés ────────────────────────────── */
+/* ── Inputs Bootstrap ───────────────────────────────────────── */
 .form-control, .form-select {
   border-color: var(--sm-border2) !important;
   border-radius: 6px !important;
@@ -153,8 +152,8 @@ body {
   border-color: var(--sm-primary) !important;
   box-shadow: 0 0 0 2px rgba(29,158,117,.12) !important;
 }
-.form-label   { font-size: 12px; font-weight: 500; color: var(--sm-text-2); margin-bottom: 4px; }
-.form-text    { font-size: 11px; color: var(--sm-text-3); }
+.form-label       { font-size: 12px; font-weight: 500; color: var(--sm-text-2); margin-bottom: 4px; }
+.form-text        { font-size: 11px; color: var(--sm-text-3); }
 .input-group-text { background: var(--sm-bg2) !important; border-color: var(--sm-border2) !important; }
 
 /* ── Boutons ────────────────────────────────────────────────── */
@@ -163,7 +162,7 @@ body {
   border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 500;
   cursor: pointer; white-space: nowrap; transition: background .15s;
 }
-.btn-sm-primary:hover { background: var(--sm-primary-dk); }
+.btn-sm-primary:hover    { background: var(--sm-primary-dk); }
 .btn-sm-primary:disabled { opacity: .5; cursor: not-allowed; }
 
 .btn-sm-outline {
@@ -184,7 +183,6 @@ body {
   border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer;
 }
 
-/* Bouton icône carré */
 .btn-icon {
   width: 32px; height: 32px; border: 1px solid var(--sm-border); border-radius: 6px;
   background: var(--sm-surface); cursor: pointer;
@@ -229,23 +227,34 @@ body {
 .sm-stock-fill { height: 100%; border-radius: 3px; }
 
 /* ── Modal Angular Material ─────────────────────────────────── */
-.cdk-overlay-backdrop.cdk-overlay-dark-backdrop { background: rgba(30,28,25,.45) !important; }
-.mat-mdc-dialog-surface {
-  border-radius: 10px !important; padding: 0 !important;
-  overflow: hidden !important; box-shadow: 0 4px 24px rgba(0,0,0,.12) !important;
+.cdk-overlay-backdrop.cdk-overlay-backdrop-showing {
+  background: rgba(30, 28, 25, 0.55) !important;
+  opacity: 1 !important;
 }
-.sm-modal .modal-header {
-  padding: .875rem 1rem; border-bottom: 1px solid var(--sm-border);
-  background: var(--sm-surface);
-}
-.sm-modal .modal-body   { padding: 1rem; background: var(--sm-surface); }
-.sm-modal .modal-footer {
-  padding: .75rem 1rem; border-top: 1px solid var(--sm-border);
-  background: var(--sm-surface); display: flex; justify-content: flex-end; gap: 8px;
-}
-.sm-modal .modal-title { font-size: 14px; font-weight: 500; color: var(--sm-text); margin: 0; }
 
-/* ── Toggle type vente (caisse) ─────────────────────────────── */
+.mat-mdc-dialog-surface {
+  border-radius: 10px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
+}
+
+.sm-modal .modal-header {
+  padding: .875rem 1rem;
+  border-bottom: 1px solid var(--sm-border);
+}
+.sm-modal .modal-body {
+  padding: 1rem;
+}
+.sm-modal .modal-footer {
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--sm-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Toggle type vente ──────────────────────────────────────── */
 .sm-type-toggle { display: flex; gap: 2px; background: var(--sm-bg2); border-radius: 10px; padding: 3px; margin-bottom: .875rem; }
 .sm-tt-btn {
   flex: 1; padding: 9px; text-align: center; border: none; border-radius: 8px;
@@ -292,10 +301,10 @@ body {
 .sm-action-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding-bottom: 1rem; }
 .sm-action-btns button { font-size: 12px; padding: 10px 6px; text-align: center; }
 
-/* ── Animation scanner actif ────────────────────────────────── */
+/* ── Animation scanner ──────────────────────────────────────── */
 @keyframes sm-pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.4; transform:scale(1.5); } }
 .sm-pulse { animation: sm-pulse 1.2s ease-in-out infinite; }
 
-/* ── PWA rotation libre ─────────────────────────────────────── */
+/* ── PWA ────────────────────────────────────────────────────── */
 @media screen { html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; } }
-@media print { .sm-bottom-nav, .sm-navbar, button { display: none !important; } }
+@media print  { .sm-bottom-nav, .sm-navbar, button { display: none !important; } }

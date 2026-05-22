@@ -20,7 +20,7 @@ import { Article } from '../../../core/models/supermarche.models';
       <div class="sm-topbar">
         <div>
           <h2 class="sm-page-title">
-            {{ isEdit ? 'Modifier l\'article' : 'Nouvel article' }}
+            {{ isEdit ? "Modifier l\'article" : "Nouvel article" }}
           </h2>
           <p class="sm-page-sub">* champs obligatoires</p>
         </div>

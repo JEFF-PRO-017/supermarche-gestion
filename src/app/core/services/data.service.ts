@@ -11,8 +11,8 @@ import { ADMIN_TEST } from './auth.service';
 
 // ── Feuilles permanentes ──────────────────────────────────────
 export const SHEET = {
-  articles:  'SM_ARTICLES',
-  users:     'SM_USERS',
+  articles: 'SM_ARTICLES',
+  users: 'SM_USERS',
 } as const;
 
 // ── Feuilles mensuelles : nom dynamique ───────────────────────
@@ -47,8 +47,8 @@ export const H = {
 @Injectable({ providedIn: 'root' })
 export class DataService {
 
-  private cache  = inject(CacheService);
-  private queue  = inject(SheetsQueueServiceService);
+  private cache = inject(CacheService);
+  private queue = inject(SheetsQueueServiceService);
   private sheets = inject(GoogleSheetsService);
 
   // ── Init ───────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ export class DataService {
     ]);
     return {
       tickets: this.parse<Ticket>(rawT, H.tickets),
-      lignes:  this.parse<LigneVente>(rawL, H.lignes),
+      lignes: this.parse<LigneVente>(rawL, H.lignes),
     };
   }
 
@@ -130,9 +130,10 @@ export class DataService {
     const article = this.cache.getArticles().find(a => a.code_article === code);
     if (!article) return;
 
-    const updated = { ...article, stock_actuel: article.stock_actuel + qte };
+    const updated = { ...article, stock_actuel: +article.stock_actuel + qte };
+
     await this.updateArticle(updated);
-    this.cache.incrementStock(code, qte);
+    // this.cache.incrementStock(code, qte);
 
     const mouvement: MouvementStock = {
       id: `MV-${Date.now()}`,
@@ -173,9 +174,11 @@ export class DataService {
         const updated = { ...art, stock_actuel: Math.max(0, art.stock_actuel - l.quantite) };
         this.cache.upsertArticle(updated);
         this.queue.enqueue(
-          { sheetName: SHEET.articles,
+          {
+            sheetName: SHEET.articles,
             row: -1, // findRowById appelé par updateArticle
-            col: 1, values: this.toRow(updated, H.articles) },
+            col: 1, values: this.toRow(updated, H.articles)
+          },
           'updateRow'
         );
 
@@ -227,6 +230,10 @@ export class DataService {
     });
   }
 
+  getUsers(): AppUser[] {
+    return this.cache.getUsers();
+  }
+
   // ── Helpers privés ─────────────────────────────────────────────
 
   // Si la feuille SM_USERS est vide, insère l'admin de test dans Sheets et le cache.
@@ -271,13 +278,12 @@ export class DataService {
 
   // Crée toutes les feuilles nécessaires si elles n'existent pas
   async ensureSheets(): Promise<void> {
-    debugger
     const tasks = [
-      { sheetName: SHEET.articles,             headers: [...H.articles] },
-      { sheetName: SHEET.users,                headers: [...H.users] },
-      { sheetName: sheetMonth('SM_TICKETS'),   headers: [...H.tickets] },
-      { sheetName: sheetMonth('SM_LIGNES'),    headers: [...H.lignes] },
-      { sheetName: sheetMonth('SM_MOUVEMENTS'),headers: [...H.mouvements] },
+      { sheetName: SHEET.articles, headers: [...H.articles] },
+      { sheetName: SHEET.users, headers: [...H.users] },
+      { sheetName: sheetMonth('SM_TICKETS'), headers: [...H.tickets] },
+      { sheetName: sheetMonth('SM_LIGNES'), headers: [...H.lignes] },
+      { sheetName: sheetMonth('SM_MOUVEMENTS'), headers: [...H.mouvements] },
     ];
     await Promise.all(tasks.map(t => this.sheets.createSheet(t)));
   }

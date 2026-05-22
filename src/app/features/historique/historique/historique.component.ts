@@ -10,6 +10,7 @@ import { DataService } from '../../../core/services/data.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { Ticket, LigneVente } from '../../../core/models/supermarche.models';
 import { TicketDetailModalComponent } from '../../../shared/components/ticket-detail-modal/ticket-detail-modal.component';
+import { ModalService } from '@shared/components/modal.service';
 
 interface MoisOption { label: string; year: number; month: number; }
 
@@ -222,21 +223,21 @@ interface MoisOption { label: string; year: number; month: number; }
   `,
 })
 export class HistoriqueComponent {
-  protected auth  = inject(AuthService);
-  private cache   = inject(CacheService);
-  private data$   = inject(DataService);
-  private dialog  = inject(MatDialog);
+  protected auth = inject(AuthService);
+  private cache = inject(CacheService);
+  private data$ = inject(DataService);
+  private dialog = inject(ModalService);
 
   filtreType = '';
   pageTicket = 0;
-  pageSize   = 10;
+  pageSize = 10;
 
   // Mois disponibles : mois courant + 4 précédents
   moisDisponibles: MoisOption[] = this.buildMois();
   moisActif = this.moisDisponibles[0].label;
 
   private _tickets = signal<Ticket[]>([]);
-  private _lignes  = signal<LigneVente[]>([]);
+  private _lignes = signal<LigneVente[]>([]);
 
   // Charge les données du mois sélectionné
   async chargerMois(m: MoisOption): Promise<void> {
@@ -277,7 +278,7 @@ export class HistoriqueComponent {
 
   onPageTicket(e: PageEvent) {
     this.pageTicket = e.pageIndex;
-    this.pageSize   = e.pageSize;
+    this.pageSize = e.pageSize;
   }
 
   nbLignes(idTicket: string): number {
@@ -297,8 +298,8 @@ export class HistoriqueComponent {
     return this._lignes().reduce((s, l) => s + (+l.quantite * (arts.get(l.code_article) ?? 0)), 0);
   });
 
-  benefice  = computed(() => this.ca() - this.coutAchat());
-  margePct  = computed(() => this.ca() ? Math.round(this.benefice() / this.ca() * 1000) / 10 : 0);
+  benefice = computed(() => this.ca() - this.coutAchat());
+  margePct = computed(() => this.ca() ? Math.round(this.benefice() / this.ca() * 1000) / 10 : 0);
 
   pctDetail = computed(() => {
     const tot = this.ca() || 1;
@@ -313,8 +314,8 @@ export class HistoriqueComponent {
   totalQte = computed(() => this._lignes().reduce((s, l) => s + +l.quantite, 0));
 
   statsArticles = computed(() => {
-    const arts   = new Map(this.cache.getArticles().map(a => [a.code_article, a]));
-    const totals = new Map<string, { nom:string; qte:number; ca:number; cout:number; gros:number }>();
+    const arts = new Map(this.cache.getArticles().map(a => [a.code_article, a]));
+    const totals = new Map<string, { nom: string; qte: number; ca: number; cout: number; gros: number }>();
 
     for (const l of this._lignes()) {
       const art = arts.get(l.code_article);
@@ -322,7 +323,7 @@ export class HistoriqueComponent {
         nom: l.nom_article, qte: 0, ca: 0, cout: 0, gros: 0,
       };
       cur.qte += +l.quantite;
-      cur.ca  += +l.sous_total;
+      cur.ca += +l.sous_total;
       cur.cout += +l.quantite * (art?.prix_achat ?? 0);
       if (l.tarif_applique === 'GROSSISTE') cur.gros += +l.quantite;
       totals.set(l.code_article, cur);
@@ -335,11 +336,7 @@ export class HistoriqueComponent {
 
   voirTicket(ticket: Ticket): void {
     const lignes = this._lignes().filter(l => l.id_ticket === ticket.id_ticket);
-    this.dialog.open(TicketDetailModalComponent, {
-      width: '420px', maxWidth: '98vw',
-      data: { ticket, lignes },
-      panelClass: 'mat-dialog-no-padding',
-    });
+    this.dialog.open(TicketDetailModalComponent, {ticket, lignes  });
   }
 
   private buildMois(): MoisOption[] {
@@ -349,7 +346,7 @@ export class HistoriqueComponent {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       result.push({
         label: d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
-        year:  d.getFullYear(),
+        year: d.getFullYear(),
         month: d.getMonth() + 1,
       });
     }
