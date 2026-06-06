@@ -1,8 +1,6 @@
 // catalogue.component.ts
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { RouterLink } from '@angular/router';
 import { CacheService } from '../../../core/services/cache.service';
 import { DataService } from '../../../core/services/data.service';
@@ -12,11 +10,13 @@ import { ArticleFormModalComponent } from '../article-form-modal/article-form-mo
 import { ReapproModalComponent } from '../../../shared/components/reapprovisionnement-modal/reapprovisionnement-modal.component';
 import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/confirm-modal.component';
 import { ModalService } from '@shared/components/modal.service';
+import { FilterBarComponent, FilterBarState, FilterBarConfig } from '@shared/FilterBarComponent';
+import { PaginationComponent } from '@shared/PaginationComponent';
 
 @Component({
   selector: 'app-catalogue',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatPaginatorModule, RouterLink],
+  imports: [CommonModule, RouterLink, FilterBarComponent, PaginationComponent],
   template: `
     <div>
 
@@ -25,110 +25,95 @@ import { ModalService } from '@shared/components/modal.service';
         <div>
           <h2 class="sm-page-title">Articles</h2>
           <p class="sm-page-sub">
-            {{ tous().length }} articles
-            @if (alertes().length) {
-              · <span style="color:var(--sm-danger)">{{ alertes().length }} en alerte</span>
+            {{ cache.getArticles().length }} articles
+            @if (cache.alertes().length) {
+              · <span class="text-danger">{{ cache.alertes().length }} en alerte</span>
             }
           </p>
         </div>
         @if (auth.isGerant()) {
-          <a routerLink="/articles/nouveau" class="btn-sm-primary"
-             style="font-size:12px;padding:7px 12px;text-decoration:none"
-             title="Créer un nouvel article">
-            <i class="fa-solid fa-plus" style="margin-right:5px;font-size:11px"></i>Nouveau
+          <a routerLink="/articles/nouveau" class="btn btn-sm btn-primary" title="Créer un nouvel article">
+            <i class="fa-solid fa-plus me-1"></i>Nouveau
           </a>
         }
       </div>
 
-      <!-- Alerte stock globale -->
-      @if (alertes().length) {
-        <div style="background:var(--sm-danger-lt);border-radius:8px;padding:.625rem .875rem;
-                    margin-bottom:.875rem;font-size:13px;color:var(--sm-danger)">
-          <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px"></i>
-          <strong>{{ alertes().length }} article(s) nécessitent un réapprovisionnement</strong>
+      <!-- Alerte stock -->
+      @if (cache.alertes().length) {
+        <div class="alert alert-danger py-2 mb-3" role="alert">
+          <i class="fa-solid fa-triangle-exclamation me-2"></i>
+          <strong>{{ cache.alertes().length }} article(s) nécessitent un réapprovisionnement</strong>
         </div>
       }
 
-      <!-- Filtres -->
-      <div class="d-flex gap-2 mb-3" style="flex-wrap:wrap">
-        <input type="search" class="form-control" style="flex:1;min-width:140px"
-               placeholder="Code ou nom..." [(ngModel)]="recherche"
-               (ngModelChange)="page=0" />
-        <select class="form-select" style="max-width:140px"
-                [(ngModel)]="filtreStock" (ngModelChange)="page=0">
-          <option value="">Tous stocks</option>
-          <option value="alerte">En alerte</option>
-          <option value="ok">Stock OK</option>
-        </select>
-      </div>
+      <!-- ✅ Filtre (en haut) -->
+      <app-filter-bar
+        [config]="filterConfig"
+        [totalAll]="cache.getArticles().length"
+        [totalFiltered]="articlesFiltres().length"
+        [pageSize]="pag().pageSize"
+        [pageSizeOptions]="[10, 20, 50]"
+        (filterChange)="onFilter($event)"
+        (pageSizeChange)="onPageSize($event)"
+      />
 
       <!-- Tableau -->
-      <div class="sm-card-flush mb-2">
-        <table class="sm-table">
-          <thead>
+      <div class="table-responsive sm-card-flush mb-0">
+        <table class="table table-hover table-sm align-middle mb-0 sm-table">
+          <thead class="table-light">
             <tr>
-              <th style="padding-left:12px">Article</th>
+              <th>Article</th>
               <th>Prix det.</th>
               <th>Prix gros</th>
               <th>Stock</th>
-              <th style="text-align:center">Actions</th>
+              <th class="text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
-            @for (a of pagines(); track a.code_article) {
-              <tr [style.background]="niveauAlerte(a) === 'CRITIQUE' ? '#FFF8F8' : niveauAlerte(a) === 'FAIBLE' ? '#FFFCF5' : ''">
-                <td style="padding-left:12px">
+            @for (a of articlesPagines(); track a.code_article) {
+              <tr [class]="niveauAlerte(a) === 'CRITIQUE' ? 'table-danger'
+                          : niveauAlerte(a) === 'FAIBLE'  ? 'table-warning' : ''">
+                <td>
                   <div class="d-flex align-items-center gap-2">
-                    <div class="sm-avatar"
-                         [style.background]="couleur(a).bg"
-                         [style.color]="couleur(a).tc">
+                    <div class="sm-avatar" [style.background]="couleur(a).bg" [style.color]="couleur(a).tc">
                       {{ a.nom.substring(0,2).toUpperCase() }}
                     </div>
                     <div>
-                      <div style="font-weight:500;font-size:13px">{{ a.nom }}</div>
-                      <span class="sm-badge {{ badgeClass(a) }}" style="font-size:10px">
-                        {{ badgeLabel(a) }}
-                      </span>
+                      <div class="fw-medium small">{{ a.nom }}</div>
+                      <span class="badge {{ badgeClass(a) }}" style="font-size:10px">{{ badgeLabel(a) }}</span>
                     </div>
                   </div>
                 </td>
-                <td style="font-size:13px;white-space:nowrap">{{ a.prix_detail | number }} F</td>
-                <td style="font-size:13px;color:var(--sm-info);white-space:nowrap">{{ a.prix_grossiste | number }} F</td>
+                <td class="small text-nowrap">{{ a.prix_detail | number }} F</td>
+                <td class="small text-nowrap text-primary">{{ a.prix_grossiste | number }} F</td>
                 <td>
                   <div class="d-flex align-items-center gap-1">
-                    <div class="sm-stock-bar">
-                      <div class="sm-stock-fill" [style.width.%]="stockPct(a)"
-                           [style.background]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' :
-                                               niveauAlerte(a) === 'FAIBLE'   ? 'var(--sm-warn)'   : 'var(--sm-primary)'">
+                    <div class="progress" style="width:48px;height:5px">
+                      <div class="progress-bar"
+                           [class]="niveauAlerte(a) === 'CRITIQUE' ? 'bg-danger'
+                                  : niveauAlerte(a) === 'FAIBLE'   ? 'bg-warning' : 'bg-primary'"
+                           [style.width.%]="stockPct(a)">
                       </div>
                     </div>
-                    <small [style.color]="niveauAlerte(a) === 'CRITIQUE' ? 'var(--sm-danger)' :
-                                          niveauAlerte(a) === 'FAIBLE'   ? 'var(--sm-warn)'   : 'var(--sm-text)'">
+                    <small [class]="niveauAlerte(a) === 'CRITIQUE' ? 'text-danger'
+                                  : niveauAlerte(a) === 'FAIBLE'   ? 'text-warning' : 'text-muted'">
                       {{ a.stock_actuel }}
                     </small>
                   </div>
                 </td>
-                <td>
-                  <div class="d-flex justify-content-center gap-1">
+                <td class="text-center">
+                  <div class="btn-group btn-group-sm">
                     @if (auth.isGerant()) {
-                      <button class="btn-icon"
-                              [style.background]="niveauAlerte(a) ? 'var(--sm-primary-lt)' : ''"
-                              title="Réapprovisionner le stock"
-                              (click)="ouvrirReappro(a)">
-                        <i class="fa-solid fa-arrow-up" style="font-size:12px"
-                           [style.color]="niveauAlerte(a) ? 'var(--sm-primary-dk)' : ''"></i>
+                      <button class="btn btn-outline-primary btn-sm" title="Réapprovisionner" (click)="ouvrirReappro(a)">
+                        <i class="fa-solid fa-arrow-up"></i>
                       </button>
-                      <button class="btn-icon"
-                              title="Modifier cet article"
-                              (click)="ouvrirFormulaire(a)">
-                        <i class="fa-solid fa-pen" style="font-size:12px"></i>
+                      <button class="btn btn-outline-secondary btn-sm" title="Modifier" (click)="ouvrirFormulaire(a)">
+                        <i class="fa-solid fa-pen"></i>
                       </button>
                     }
                     @if (auth.isAdmin()) {
-                      <button class="btn-icon" style="color:var(--sm-danger)"
-                              title="Supprimer cet article"
-                              (click)="supprimer(a)">
-                        <i class="fa-solid fa-trash" style="font-size:12px"></i>
+                      <button class="btn btn-outline-danger btn-sm" title="Supprimer" (click)="supprimer(a)">
+                        <i class="fa-solid fa-trash"></i>
                       </button>
                     }
                   </div>
@@ -136,7 +121,7 @@ import { ModalService } from '@shared/components/modal.service';
               </tr>
             } @empty {
               <tr>
-                <td colspan="5" class="text-center py-4" style="color:var(--sm-text-3)">
+                <td colspan="5" class="text-center py-4 text-muted">
                   <i class="fa-solid fa-box-open fa-lg d-block mb-2 opacity-50"></i>
                   Aucun article trouvé
                 </td>
@@ -146,91 +131,83 @@ import { ModalService } from '@shared/components/modal.service';
         </table>
       </div>
 
-      <!-- Pagination -->
-      <mat-paginator
-        [length]="filtres().length"
-        [pageSize]="pageSize"
-        [pageSizeOptions]="[10, 20, 50]"
-        (page)="onPage($event)"
-        showFirstLastButtons>
-      </mat-paginator>
+      <!-- ✅ Pagination (en bas, après le tableau) -->
+    <app-pagination
+      [page]="pag().page"
+      [total]="articlesFiltres().length"
+      [pageSize]="pag().pageSize"
+(pageChange)="onPage($event)"  
+  />
 
     </div>
-  `,
+  `
 })
 export class CatalogueComponent {
   protected cache = inject(CacheService);
   protected data$ = inject(DataService);
-  protected auth  = inject(AuthService);
-  private modal   = inject(ModalService);
+  protected auth = inject(AuthService);
+  private modal = inject(ModalService);
 
-  recherche   = '';
-  filtreStock = '';
-  page        = 0;
-  pageSize    = 10;
+  pag = signal({ page: 0, pageSize: 10 });
+  private filter = signal<FilterBarState>({ search: '', select: '' });
 
-  tous    = () => this.cache.getArticles();
-  alertes = this.cache.alertes;
-
-  filtres = computed(() => {
-    const q = this.recherche.toLowerCase();
+  readonly filterConfig: FilterBarConfig = {
+    searchPlaceholder: 'Code ou nom...',
+    selectOptions: [
+      { value: 'alerte', label: 'En alerte', icon: 'fa-triangle-exclamation' },
+      { value: 'ok', label: 'Stock OK', icon: 'fa-circle-check' },
+    ],
+    selectPlaceholder: 'Tous',
+  };
+onPage(page: number) { this.pag.update(p => ({ ...p, page })); }
+  articlesFiltres = computed(() => {
+    const { search, select } = this.filter();
+    const q = search.toLowerCase();
     return this.cache.getArticles().filter(a => {
-      const mQ = !q || a.nom.toLowerCase().includes(q) || a.code_article.includes(q);
-      const mS = !this.filtreStock
-        || (this.filtreStock === 'alerte' &&  this.niveauAlerte(a))
-        || (this.filtreStock === 'ok'     && !this.niveauAlerte(a));
-      return mQ && mS;
+      const matchQ = !q || a.nom.toLowerCase().includes(q) || a.code_article.includes(q);
+      const matchS = !select
+        || (select === 'alerte' && this.niveauAlerte(a))
+        || (select === 'ok' && !this.niveauAlerte(a));
+      return matchQ && matchS;
     });
   });
 
-  pagines = computed(() =>
-    this.filtres().slice(this.page * this.pageSize, (this.page + 1) * this.pageSize)
-  );
+  articlesPagines = computed(() => {
+    const { page, pageSize } = this.pag();
+    return this.articlesFiltres().slice(page * pageSize, (page + 1) * pageSize);
+  });
 
-  onPage(e: PageEvent) { this.page = e.pageIndex; this.pageSize = e.pageSize; }
+  onFilter(state: FilterBarState) { this.filter.set(state); this.pag.update(p => ({ ...p, page: 0 })); }
+  onPageSize(size: number) { this.pag.set({ page: 0, pageSize: size }); }
 
   niveauAlerte(a: Article): 'CRITIQUE' | 'FAIBLE' | null {
-    if (a.stock_actuel <= a.seuil_alerte)       return 'CRITIQUE';
+    if (a.stock_actuel <= a.seuil_alerte) return 'CRITIQUE';
     if (a.stock_actuel <= a.seuil_alerte * 1.5) return 'FAIBLE';
     return null;
   }
-
-  stockPct(a: Article): number {
-    return Math.min(100, Math.round(a.stock_actuel / (a.seuil_alerte * 8) * 100));
-  }
-
-  badgeClass(a: Article): string {
+  stockPct(a: Article) { return Math.min(100, Math.round(a.stock_actuel / (a.seuil_alerte * 8) * 100)); }
+  badgeClass(a: Article) {
     const n = this.niveauAlerte(a);
-    return n === 'CRITIQUE' ? 'sm-badge-red' : n === 'FAIBLE' ? 'sm-badge-warn' : 'sm-badge-green';
+    return n === 'CRITIQUE' ? 'bg-danger' : n === 'FAIBLE' ? 'bg-warning text-dark' : 'bg-success';
   }
-
-  badgeLabel(a: Article): string {
+  badgeLabel(a: Article) {
     const n = this.niveauAlerte(a);
     return n === 'CRITIQUE' ? 'Rupture imminente' : n === 'FAIBLE' ? 'Stock faible' : 'En stock';
   }
 
   private PALETTES = [
-    { bg:'#E1F5EE', tc:'#0F6E56' }, { bg:'#FAECE7', tc:'#993C1D' },
-    { bg:'#E6F1FB', tc:'#185FA5' }, { bg:'#EAF3DE', tc:'#3B6D11' },
-    { bg:'#FAEEDA', tc:'#854F0B' }, { bg:'#FBEAF0', tc:'#993556' },
-    { bg:'#EEEDFE', tc:'#534AB7' }, { bg:'#FCEBEB', tc:'#A32D2D' },
+    { bg: '#E1F5EE', tc: '#0F6E56' }, { bg: '#FAECE7', tc: '#993C1D' },
+    { bg: '#E6F1FB', tc: '#185FA5' }, { bg: '#EAF3DE', tc: '#3B6D11' },
+    { bg: '#FAEEDA', tc: '#854F0B' }, { bg: '#FBEAF0', tc: '#993556' },
+    { bg: '#EEEDFE', tc: '#534AB7' }, { bg: '#FCEBEB', tc: '#A32D2D' },
   ];
+  couleur(a: Article) { return this.PALETTES[parseInt(a.code_article) % this.PALETTES.length] ?? this.PALETTES[0]; }
 
-  couleur(a: Article): { bg: string; tc: string } {
-    return this.PALETTES[parseInt(a.code_article) % this.PALETTES.length] ?? this.PALETTES[0];
-  }
-
-  ouvrirFormulaire(article?: Article) {
-    this.modal.open(ArticleFormModalComponent, { article });
-  }
-
-  ouvrirReappro(article: Article) {
-    this.modal.open(ReapproModalComponent, { article });
-  }
-
+  ouvrirFormulaire(article?: Article) { this.modal.open(ArticleFormModalComponent, { article }); }
+  ouvrirReappro(article: Article) { this.modal.open(ReapproModalComponent, { article }); }
   async supprimer(article: Article) {
     const ok = await this.modal.open(ConfirmModalComponent, {
-      titre:   'Supprimer un article',
+      titre: 'Supprimer un article',
       message: `Supprimer définitivement « ${article.nom} » ?`,
     });
     if (ok) this.data$.deleteArticle(article.code_article);
