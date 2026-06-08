@@ -1,5 +1,5 @@
 // historique.component.ts
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CacheService } from '../../../core/services/cache.service';
 import { DataService } from '../../../core/services/data.service';
@@ -10,7 +10,7 @@ import { ModalService } from '@shared/components/modal.service';
 import { FilterBarComponent, FilterBarState, FilterBarConfig } from '@shared/FilterBarComponent';
 import { PaginationComponent } from '@shared/PaginationComponent';
 
-interface MoisOption { label: string; year: number; month: number; }
+interface MoisOption { label: string; year: number; month: number; jour?: number; }
 
 @Component({
   selector: 'app-historique',
@@ -32,6 +32,12 @@ interface MoisOption { label: string; year: number; month: number; }
 
       <!-- Sélecteur période -->
       <div class="d-flex gap-2 mb-3 flex-wrap">
+        <!-- ✅ Bouton "Aujourd'hui" toujours visible en premier -->
+        <button class="btn btn-sm"
+                [class]="moisActif === periodeAujourdhui.label ? 'btn-warning' : 'btn-outline-warning'"
+                (click)="chargerMois(periodeAujourdhui)">
+          <i class="fa-solid fa-calendar-day me-1"></i>Aujourd'hui
+        </button>
         @for (m of moisDisponibles; track m.label) {
           <button class="btn btn-sm"
                   [class]="moisActif === m.label ? 'btn-success' : 'btn-outline-secondary'"
@@ -103,7 +109,6 @@ interface MoisOption { label: string; year: number; month: number; }
       <!-- ── Onglet tickets ── -->
       @if (onglet === 'tickets') {
 
-        <!-- ✅ Filtre en haut -->
         <app-filter-bar
           [config]="filterConfigTickets"
           [totalAll]="tickets().length"
@@ -114,7 +119,6 @@ interface MoisOption { label: string; year: number; month: number; }
           (pageSizeChange)="onPageSize($event)"
         />
 
-        <!-- Tableau -->
         <div class="table-responsive rounded border">
           <table class="table table-hover table-sm align-middle mb-0">
             <thead class="table-light">
@@ -153,29 +157,39 @@ interface MoisOption { label: string; year: number; month: number; }
                 </tr>
               }
             </tbody>
+            @if (ticketsFiltres().length) {
+              <tfoot class="table-light fw-semibold">
+                <tr>
+                  <td colspan="3">Total période</td>
+                  <td></td>
+                  <td>{{ ca() | number }} F</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            }
           </table>
         </div>
 
-        <!-- ✅ Pagination en bas -->
-<app-pagination
-  [page]="pag().page"
-  [total]="ticketsFiltres().length"
-  [pageSize]="pag().pageSize"
-  (pageChange)="onPageTicket($event)"
-/>
+        <app-pagination
+          [page]="pag().page"
+          [total]="ticketsFiltres().length"
+          [pageSize]="pag().pageSize"
+          (pageChange)="onPageTicket($event)"
+        />
       }
 
       <!-- ── Onglet articles ── -->
       @if (onglet === 'articles') {
-          <app-filter-bar
-    [config]="filterConfigArticles"
-    [totalAll]="statsArticles().length"
-    [totalFiltered]="statsArticlesFiltres().length"
-    [pageSize]="pagArt().pageSize"
-    [pageSizeOptions]="[5,10, 20, 50]"
-    (filterChange)="onFilterArt($event)"
-    (pageSizeChange)="onPageSizeArt($event)"
-  />
+
+        <app-filter-bar
+          [config]="filterConfigArticles"
+          [totalAll]="statsArticles().length"
+          [totalFiltered]="statsArticlesFiltres().length"
+          [pageSize]="pagArt().pageSize"
+          [pageSizeOptions]="[5, 10, 20, 50]"
+          (filterChange)="onFilterArt($event)"
+          (pageSizeChange)="onPageSizeArt($event)"
+        />
 
         <div class="table-responsive rounded border">
           <table class="table table-hover table-sm align-middle mb-0">
@@ -193,7 +207,8 @@ interface MoisOption { label: string; year: number; month: number; }
               </tr>
             </thead>
             <tbody>
-              @for (r of statsArticles(); track r.code) {
+              <!-- ✅ FIX : statsArticlesPagines() et non statsArticles() -->
+              @for (r of statsArticlesPagines(); track r.code) {
                 <tr>
                   <td class="fw-semibold small">{{ r.nom }}</td>
                   <td><code class="small">{{ r.code }}</code></td>
@@ -215,6 +230,7 @@ interface MoisOption { label: string; year: number; month: number; }
                 </tr>
               }
             </tbody>
+            <!-- ✅ tfoot utilise statsArticles() (non paginé) = totaux réels -->
             @if (statsArticles().length) {
               <tfoot class="table-light fw-semibold">
                 <tr>
@@ -232,90 +248,116 @@ interface MoisOption { label: string; year: number; month: number; }
           </table>
         </div>
 
-          <app-pagination
-    [page]="pagArt().page"
-    [total]="statsArticlesFiltres().length"
-    [pageSize]="pagArt().pageSize"
-    (pageChange)="onPageArt($event)"
-  />
+        <app-pagination
+          [page]="pagArt().page"
+          [total]="statsArticlesFiltres().length"
+          [pageSize]="pagArt().pageSize"
+          (pageChange)="onPageArt($event)"
+        />
       }
 
     </div>
   `
 })
-export class HistoriqueComponent {
-  protected auth = inject(AuthService);
-  private cache = inject(CacheService);
-  private data$ = inject(DataService);
-  private dialog = inject(ModalService);
+export class HistoriqueComponent implements OnInit {
+  protected auth  = inject(AuthService);
+  private cache   = inject(CacheService);
+  private data$   = inject(DataService);
+  private dialog  = inject(ModalService);
 
   onglet: 'tickets' | 'articles' = 'tickets';
-  pag = signal({ page: 0, pageSize: 10 });
+
+  // ── Pagination (signals) ──────────────────────────────────────────────────
+  pag    = signal({ page: 0, pageSize: 10 });
   pagArt = signal({ page: 0, pageSize: 10 });
 
+  // ── Filtres ───────────────────────────────────────────────────────────────
   private filterState = signal<FilterBarState>({ search: '', select: '' });
+  private filterArt   = signal<FilterBarState>({ search: '', select: '' });
 
-  private filterArt = signal<FilterBarState>({ search: '', select: '' });
+  // ── Données brutes ────────────────────────────────────────────────────────
+  private _tickets = signal<Ticket[]>([]);
+  private _lignes  = signal<LigneVente[]>([]);
 
-  onFilterArt(state: FilterBarState) { this.filterArt.set(state); this.pagArt.update(p => ({ ...p, page: 0 })); }
-  onPageSizeArt(size: number) { this.pagArt.set({ page: 0, pageSize: size }); }
+  // ── Période "Aujourd'hui" ─────────────────────────────────────────────────
+  readonly periodeAujourdhui: MoisOption = (() => {
+    const now = new Date();
+    return {
+      label: "Aujourd'hui · " + now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' }),
+      year:  now.getFullYear(),
+      month: now.getMonth() + 1,
+      jour:  now.getDate(),
+    };
+  })();
 
+  moisDisponibles: MoisOption[] = this.buildMois();
+  moisActif = this.periodeAujourdhui.label;
+
+  // ── Configs filtres ───────────────────────────────────────────────────────
   readonly filterConfigTickets: FilterBarConfig = {
     searchPlaceholder: 'N° ticket ou caissier...',
     selectOptions: [
-      { value: 'DETAIL', label: 'Détail', icon: 'fa-user' },
-      { value: 'GROSSISTE', label: 'Grossiste', icon: 'fa-truck' },
+      { value: 'DETAIL',    label: 'Détail',     icon: 'fa-user'  },
+      { value: 'GROSSISTE', label: 'Grossiste',  icon: 'fa-truck' },
     ],
     selectPlaceholder: 'Tous',
   };
 
-  statsArticlesFiltres = computed(() => {
-    const { search, select } = this.filterArt();
-    const q = search.toLowerCase();
-    return this.statsArticles().filter(r => {
-      const matchQ = !q || r.nom.toLowerCase().includes(q) || r.code.toLowerCase().includes(q);
-      const canal = r.gros > 0 ? 'Mixte' : 'Detail';
-      const matchS = !select || canal === select;
-      return matchQ && matchS;
-    });
-  });
-  onFilter(state: FilterBarState) { this.filterState.set(state); this.pag.update(p => ({ ...p, page: 0 })); }
-  onPageSize(size: number) { this.pag.set({ page: 0, pageSize: size }); }
-
-  moisDisponibles: MoisOption[] = this.buildMois();
-  moisActif = this.moisDisponibles[0].label;
-
-  private _tickets = signal<Ticket[]>([]);
-  private _lignes = signal<LigneVente[]>([]);
-
-  ngOnInit() {
-    this._tickets.set(this.cache.getTickets());
-    this._lignes.set(this.cache.getLignes());
-  }
-  onPageTicket(page: number) { this.pag.update(p => ({ ...p, page })); }
-  onPageArt(page: number) { this.pagArt.update(p => ({ ...p, page })); }
   readonly filterConfigArticles: FilterBarConfig = {
     searchPlaceholder: 'Nom ou code article...',
     selectOptions: [
-      { value: 'Mixte', label: 'Mixte', icon: 'fa-shuffle' },
-      { value: 'Detail', label: 'Détail', icon: 'fa-user' },
+      { value: 'Mixte',  label: 'Mixte',   icon: 'fa-shuffle' },
+      { value: 'Detail', label: 'Détail',  icon: 'fa-user'    },
     ],
     selectPlaceholder: 'Tous',
   };
+
+  // ── Cycle de vie ──────────────────────────────────────────────────────────
+  ngOnInit(): void {
+    // Charger "aujourd'hui" par défaut
+    this.chargerMois(this.periodeAujourdhui);
+  }
+
+  // ── Chargement période ────────────────────────────────────────────────────
   async chargerMois(m: MoisOption): Promise<void> {
     this.moisActif = m.label;
+    this.pag.set({ page: 0, pageSize: this.pag().pageSize });
+    this.pagArt.set({ page: 0, pageSize: this.pagArt().pageSize });
+
     const now = new Date();
-    if (m.year === now.getFullYear() && m.month === now.getMonth() + 1) {
-      this._tickets.set(this.cache.getTickets());
-      this._lignes.set(this.cache.getLignes());
+    const estMoisCourant = m.year === now.getFullYear() && m.month === now.getMonth() + 1;
+
+    if (estMoisCourant) {
+      let tickets = this.cache.getTickets();
+      let lignes  = this.cache.getLignes();
+
+      // ✅ Filtre "jour" si c'est la période Aujourd'hui
+      if (m.jour) {
+        const dateStr = `${m.year}-${String(m.month).padStart(2,'0')}-${String(m.jour).padStart(2,'0')}`;
+        tickets = tickets.filter(t => t.date_heure.startsWith(dateStr));
+        const ids = new Set(tickets.map(t => t.id_ticket));
+        lignes  = lignes.filter(l => ids.has(l.id_ticket));
+      }
+
+      this._tickets.set(tickets);
+      this._lignes.set(lignes);
     } else {
       const res = await this.data$.loadMonth(m.year, m.month);
       this._tickets.set(res.tickets);
       this._lignes.set(res.lignes);
     }
-    this.pag.update(p => ({ ...p, page: 0 }));
   }
 
+  // ── Handlers pagination / filtre ──────────────────────────────────────────
+  onFilter(state: FilterBarState)    { this.filterState.set(state); this.pag.update(p => ({ ...p, page: 0 })); }
+  onPageSize(size: number)           { this.pag.set({ page: 0, pageSize: size }); }
+  onPageTicket(page: number)         { this.pag.update(p => ({ ...p, page })); }
+
+  onFilterArt(state: FilterBarState) { this.filterArt.set(state); this.pagArt.update(p => ({ ...p, page: 0 })); }
+  onPageSizeArt(size: number)        { this.pagArt.set({ page: 0, pageSize: size }); }
+  onPageArt(page: number)            { this.pagArt.update(p => ({ ...p, page })); }
+
+  // ── Computeds tickets ─────────────────────────────────────────────────────
   tickets = computed(() => this._tickets());
 
   ticketsFiltres = computed(() => {
@@ -332,36 +374,16 @@ export class HistoriqueComponent {
     const { page, pageSize } = this.pag();
     return this.ticketsFiltres().slice(page * pageSize, (page + 1) * pageSize);
   });
-  statsArticlesPagines = computed(() => {
-    const { page, pageSize } = this.pagArt();
-    return this.statsArticles().slice(page * pageSize, (page + 1) * pageSize);
-  });
 
-  nbLignes(id: string) { return this._lignes().filter(l => l.id_ticket === id).length; }
-  nbGrossiste = computed(() => this._tickets().filter(t => t.type_vente === 'GROSSISTE').length);
-  ca = computed(() => this._tickets().reduce((s, t) => s + +t.montant_total, 0));
-  coutAchat = computed(() => {
-    const arts = new Map(this.cache.getArticles().map(a => [a.code_article, a.prix_achat]));
-    return this._lignes().reduce((s, l) => s + (+l.quantite * (arts.get(l.code_article) ?? 0)), 0);
-  });
-  benefice = computed(() => this.ca() - this.coutAchat());
-  margePct = computed(() => this.ca() ? Math.round(this.benefice() / this.ca() * 1000) / 10 : 0);
-  pctDetail = computed(() => {
-    const tot = this.ca() || 1;
-    const det = this._tickets().filter(t => t.type_vente === 'DETAIL').reduce((s, t) => s + +t.montant_total, 0);
-    return Math.round(det / tot * 100);
-  });
-  pctGros = computed(() => 100 - this.pctDetail());
-  totalQte = computed(() => this._lignes().reduce((s, l) => s + +l.quantite, 0));
-
+  // ── Computeds articles ────────────────────────────────────────────────────
   statsArticles = computed(() => {
-    const arts = new Map(this.cache.getArticles().map(a => [a.code_article, a]));
+    const arts   = new Map(this.cache.getArticles().map(a => [a.code_article, a]));
     const totals = new Map<string, { nom: string; qte: number; ca: number; cout: number; gros: number }>();
     for (const l of this._lignes()) {
       const art = arts.get(l.code_article);
       const cur = totals.get(l.code_article) ?? { nom: l.nom_article, qte: 0, ca: 0, cout: 0, gros: 0 };
-      cur.qte += +l.quantite;
-      cur.ca += +l.sous_total;
+      cur.qte  += +l.quantite;
+      cur.ca   += +l.sous_total;
       cur.cout += +l.quantite * (art?.prix_achat ?? 0);
       if (l.tarif_applique === 'GROSSISTE') cur.gros += +l.quantite;
       totals.set(l.code_article, cur);
@@ -371,6 +393,44 @@ export class HistoriqueComponent {
       .sort((a, b) => b.ca - a.ca);
   });
 
+  statsArticlesFiltres = computed(() => {
+    const { search, select } = this.filterArt();
+    const q = search.toLowerCase();
+    return this.statsArticles().filter(r => {
+      const matchQ = !q || r.nom.toLowerCase().includes(q) || r.code.toLowerCase().includes(q);
+      const canal  = r.gros > 0 ? 'Mixte' : 'Detail';
+      const matchS = !select || canal === select;
+      return matchQ && matchS;
+    });
+  });
+
+  // ✅ FIX : pagine sur statsArticlesFiltres() et non statsArticles()
+  statsArticlesPagines = computed(() => {
+    const { page, pageSize } = this.pagArt();
+    return this.statsArticlesFiltres().slice(page * pageSize, (page + 1) * pageSize);
+  });
+
+  // ── Métriques (toujours sur données non paginées) ─────────────────────────
+  nbLignes(id: string)  { return this._lignes().filter(l => l.id_ticket === id).length; }
+  nbGrossiste = computed(() => this._tickets().filter(t => t.type_vente === 'GROSSISTE').length);
+  ca          = computed(() => this._tickets().reduce((s, t) => s + +t.montant_total, 0));
+  totalQte    = computed(() => this._lignes().reduce((s, l) => s + +l.quantite, 0));
+  coutAchat   = computed(() => {
+    const arts = new Map(this.cache.getArticles().map(a => [a.code_article, a.prix_achat]));
+    return this._lignes().reduce((s, l) => s + (+l.quantite * (arts.get(l.code_article) ?? 0)), 0);
+  });
+  benefice  = computed(() => this.ca() - this.coutAchat());
+  margePct  = computed(() => this.ca() ? Math.round(this.benefice() / this.ca() * 1000) / 10 : 0);
+  pctDetail = computed(() => {
+    const tot = this.ca() || 1;
+    const det = this._tickets()
+      .filter(t => t.type_vente === 'DETAIL')
+      .reduce((s, t) => s + +t.montant_total, 0);
+    return Math.round(det / tot * 100);
+  });
+  pctGros = computed(() => 100 - this.pctDetail());
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
   voirTicket(ticket: Ticket): void {
     const lignes = this._lignes().filter(l => l.id_ticket === ticket.id_ticket);
     this.dialog.open(TicketDetailModalComponent, { ticket, lignes });
@@ -379,7 +439,11 @@ export class HistoriqueComponent {
   private buildMois(): MoisOption[] {
     return Array.from({ length: 5 }, (_, i) => {
       const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1);
-      return { label: d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }), year: d.getFullYear(), month: d.getMonth() + 1 };
+      return {
+        label: d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
+        year:  d.getFullYear(),
+        month: d.getMonth() + 1,
+      };
     });
   }
 }

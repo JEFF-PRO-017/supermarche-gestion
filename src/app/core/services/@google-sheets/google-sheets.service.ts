@@ -1,32 +1,16 @@
-// ─────────────────────────────────────────────────────────────────
 // google-sheets.service.ts
-//
-// Modification par rapport à la version d'origine :
-//  - Ajout de updateRow() : écrit toute une ligne en un seul appel
-//    PUT values (remplace les N appels updateCell du DataService v1)
-//  - findRowById retourne -1 si absent (cohérent avec DataService)
-//  - Tout le reste est inchangé
-// ─────────────────────────────────────────────────────────────────
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import * as jose from 'jose';
 import { environment } from '../../../../environments/environment';
 
-// ── Types d'entrée ────────────────────────────────────────────────
-
-export interface SheetConfig   { sheetName: string; headers: string[]; }
-export interface RowConfig     { sheetName: string; rowData: any[]; }
-export interface UpdateRowConfig {
-  sheetName: string;
-  row:    number;   // ligne Sheets 1-based
-  col:    number;   // colonne de départ (1 = A)
-  values: any[];    // valeurs dans l'ordre des en-têtes
-}
-export interface CellConfig    { sheetName: string; row: number; col: number; value: any; }
+// ── Types ─────────────────────────────────────────────────────────
+export interface SheetConfig     { sheetName: string; headers: string[]; }
+export interface RowConfig       { sheetName: string; rowData: any[]; }
+export interface UpdateRowConfig { sheetName: string; row: number; col: number; values: any[]; }
+export interface CellConfig      { sheetName: string; row: number; col: number; value: any; }
 export interface DeleteRowConfig { sheetName: string; rowIndex: number; }
-
-// ─────────────────────────────────────────────────────────────────
 
 @Injectable({ providedIn: 'root' })
 export class GoogleSheetsService {
@@ -36,11 +20,9 @@ export class GoogleSheetsService {
   private token:  string | null = null;
   private expiry  = 0;
 
-  constructor(private http: HttpClient) {
-    // this.refreshToken();
-  }
+  constructor(private http: HttpClient) {}
 
-  // ── Auth JWT ─────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────
 
   private async refreshToken(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
@@ -74,22 +56,18 @@ export class GoogleSheetsService {
     });
   }
 
-  // ── Helpers URL ──────────────────────────────────────────────
+  // ── Helpers URL ───────────────────────────────────────────────
 
-  private enc(name: string): string { return encodeURIComponent(name); }
+  private enc(name: string):  string { return encodeURIComponent(name); }
   private url(path: string):  string { return `${this.BASE}/${environment.spreadsheetId}${path}`; }
-  private rangeNotation(col: number, row: number): string {
-    return `${this.colLetter(col)}${row}`;
-  }
+  private rangeNotation(col: number, row: number): string { return `${this.colLetter(col)}${row}`; }
 
-  // ── CRUD ─────────────────────────────────────────────────────
+  // ── CRUD ──────────────────────────────────────────────────────
 
-  /** Crée la feuille si elle n'existe pas encore, puis écrit les en-têtes */
+  /** Crée la feuille si elle n'existe pas, puis écrit les en-têtes */
   async createSheet(cfg: SheetConfig): Promise<void> {
     const hdrs = await this.headers();
-    const file: any = await firstValueFrom(
-      this.http.get(this.url(''), { headers: hdrs })
-    );
+    const file: any = await firstValueFrom(this.http.get(this.url(''), { headers: hdrs }));
     if (file.sheets?.some((s: any) => s.properties?.title === cfg.sheetName)) return;
 
     await firstValueFrom(
@@ -118,10 +96,7 @@ export class GoogleSheetsService {
     );
   }
 
-  /**
-   * Met à jour toute une ligne en un seul appel PUT.
-   * Remplace les N appels updateCell de l'ancienne version.
-   */
+  /** Met à jour toute une ligne en un seul appel PUT */
   async updateRow(cfg: UpdateRowConfig): Promise<void> {
     const hdrs  = await this.headers();
     const start = this.rangeNotation(cfg.col, cfg.row);
@@ -158,12 +133,7 @@ export class GoogleSheetsService {
       this.http.post(this.url(':batchUpdate'), {
         requests: [{
           deleteDimension: {
-            range: {
-              sheetId,
-              dimension:  'ROWS',
-              startIndex: cfg.rowIndex,
-              endIndex:   cfg.rowIndex + 1,
-            }
+            range: { sheetId, dimension: 'ROWS', startIndex: cfg.rowIndex, endIndex: cfg.rowIndex + 1 }
           }
         }]
       }, { headers: hdrs })
@@ -171,27 +141,43 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Cherche une valeur dans la colonne A et retourne le numéro de ligne (1-based).
+   * LIT UN BLOC DE LIGNES — utilisé par DataService pour charger 100 lignes à la fois.
+   * Exemple de plage : 'SM_TICKETS_2026_05!A2:Z101'
+   * Retourne un tableau vide si la plage est vide (fin des données).
+   */
+  async getRange(range: string): Promise<any[][]> {
+    const hdrs = await this.headers();
+    // La plage contient déjà le nom de la feuille — on l'encode correctement
+    const parts    = range.split('!');                      // ['SM_TICKETS_2026_05', 'A2:Z101']
+    const feuille  = this.enc(parts[0]);
+    const cellules = parts[1] ?? 'A:Z';
+    const res: any = await firstValueFrom(
+      this.http.get(
+        this.url(`/values/${feuille}!${cellules}`),
+        { headers: hdrs }
+      )
+    );
+    return res.values ?? []; // tableau vide = plus rien à lire
+  }
+
+  /**
+   * Cherche une valeur dans la colonne A, retourne le numéro de ligne (1-based).
    * Retourne -1 si absent.
-   * Utilisé par DataService avant chaque update/delete (système distribué).
    */
   async findRowById(sheetName: string, id: any): Promise<number> {
     const hdrs = await this.headers();
     const res: any = await firstValueFrom(
-      this.http.get(
-        this.url(`/values/${this.enc(sheetName)}!A:A`),
-        { headers: hdrs }
-      )
+      this.http.get(this.url(`/values/${this.enc(sheetName)}!A:A`), { headers: hdrs })
     );
     const rows: any[][] = res.values ?? [];
     const idx = rows.findIndex(r => String(r[0]) === String(id));
-    return idx === -1 ? -1 : idx + 1; // 1-based, ligne 1 = en-têtes
+    return idx === -1 ? -1 : idx + 1;
   }
 
   async findRowByValue(sheetName: string, col: number, value: any): Promise<number> {
-    const hdrs = await this.headers();
+    const hdrs      = await this.headers();
     const colLetter = this.colLetter(col);
-    const res: any = await firstValueFrom(
+    const res: any  = await firstValueFrom(
       this.http.get(
         this.url(`/values/${this.enc(sheetName)}!${colLetter}:${colLetter}`),
         { headers: hdrs }
@@ -199,21 +185,18 @@ export class GoogleSheetsService {
     );
     const rows: any[][] = res.values ?? [];
     const idx = rows.findIndex(r => String(r[0]) === String(value));
-    return idx === -1 ? -1 : idx + 1; // 1-based, ligne 1 = en-têtes
+    return idx === -1 ? -1 : idx + 1;
   }
 
   /**
-   * batchGet : retourne les données dans le même ordre que les plages demandées.
-   * Intercale les noms de plage entre les tableaux de données (comportement d'origine).
+   * Récupère plusieurs plages en un seul appel HTTP.
+   * Retourne les données intercalées avec les noms de feuilles (comportement d'origine).
    */
   async batchGet(ranges: string[]): Promise<any[][]> {
-    const hdrs = await this.headers();
+    const hdrs   = await this.headers();
     const params = ranges.map(r => encodeURIComponent(r)).join('&ranges=');
     const res: any = await firstValueFrom(
-      this.http.get(
-        this.url(`/values:batchGet?ranges=${params}`),
-        { headers: hdrs }
-      )
+      this.http.get(this.url(`/values:batchGet?ranges=${params}`), { headers: hdrs })
     );
     const out: any[][] = [];
     for (const vr of (res.valueRanges ?? [])) {
@@ -223,31 +206,26 @@ export class GoogleSheetsService {
     return out;
   }
 
-  /** Lit toute une feuille (colonnes A:Z) */
+  /** Lit toute une feuille (colonnes A:Z) en un seul appel */
   async fetchRaw(sheetName: string): Promise<any[][]> {
     const hdrs = await this.headers();
     const res: any = await firstValueFrom(
-      this.http.get(
-        this.url(`/values/${this.enc(sheetName)}!A:Z`),
-        { headers: hdrs }
-      )
+      this.http.get(this.url(`/values/${this.enc(sheetName)}!A:Z`), { headers: hdrs })
     );
     return res.values ?? [];
   }
 
-  // ── Helpers internes ─────────────────────────────────────────
+  // ── Helpers internes ──────────────────────────────────────────
 
   private async getSheetId(sheetName: string): Promise<number> {
     const hdrs = await this.headers();
-    const res: any = await firstValueFrom(
-      this.http.get(this.url(''), { headers: hdrs })
-    );
+    const res: any = await firstValueFrom(this.http.get(this.url(''), { headers: hdrs }));
     const sheet = res.sheets?.find((s: any) => s.properties?.title === sheetName);
     if (!sheet) throw new Error(`Feuille "${sheetName}" introuvable`);
     return sheet.properties.sheetId;
   }
 
-  /** Convertit un numéro de colonne (1-based) en lettre(s) Excel */
+  /** Convertit un numéro de colonne (1-based) en lettre(s) — ex: 1→A, 27→AA */
   private colLetter(col: number): string {
     let s = '';
     while (col > 0) {
@@ -258,8 +236,6 @@ export class GoogleSheetsService {
     return s;
   }
 
-  // findSheetId conservé pour compatibilité
-  async findSheetId(sheetName: string): Promise<number> {
-    return this.getSheetId(sheetName);
-  }
+  // Alias conservé pour compatibilité
+  async findSheetId(sheetName: string): Promise<number> { return this.getSheetId(sheetName); }
 }

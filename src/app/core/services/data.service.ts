@@ -1,121 +1,137 @@
 // data.service.ts — supermarché
+// Stratégie : charge 100 lignes à la fois en arrière-plan jusqu'à tout avoir
+
 import { Injectable, inject } from '@angular/core';
 import { CacheService } from './cache.service';
 import { SheetsQueueServiceService } from './sheets-queue.service';
 import { GoogleSheetsService } from './@google-sheets/google-sheets.service';
 import {
-  Article, AppUser, Ticket, LigneVente,
-  MouvementStock, TypeMouvement
+  Article, AppUser, Ticket, LigneVente, MouvementStock
 } from '../models/supermarche.models';
 import { ADMIN_TEST } from './auth.service';
 
-// ── Feuilles permanentes ──────────────────────────────────────
+// ── Noms des feuilles permanentes ─────────────────────────────
 export const SHEET = {
   articles: 'SM_ARTICLES',
   users: 'SM_USERS',
 } as const;
 
-// ── Feuilles mensuelles : nom dynamique ───────────────────────
-// Format : SM_TICKETS_2026_05
+// ── Nom dynamique des feuilles mensuelles ─────────────────────
+// Exemple : SM_TICKETS_2026_05
 export function sheetMonth(prefix: string, date = new Date()): string {
   return `${prefix}_${date.getFullYear()}_${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 // ── En-têtes des feuilles ─────────────────────────────────────
 export const H = {
-  articles: [
-    'code_article', 'nom', 'description',
-    'prix_achat', 'prix_detail', 'prix_grossiste',
-    'qte_min_grossiste', 'stock_actuel', 'stock_maximum', 'seuil_alerte',
-  ],
+  articles: ['code_article', 'nom', 'description', 'prix_achat', 'prix_detail', 'prix_grossiste', 'qte_min_grossiste', 'stock_actuel', 'stock_maximum', 'seuil_alerte'],
   users: ['id', 'username', 'mot_de_passe', 'nom', 'role'],
-  tickets: [
-    'id_ticket', 'date_heure', 'type_vente',
-    'montant_total', 'montant_recu', 'monnaie_rendue',
-    'id_caissier', 'nom_caissier',
-  ],
-  lignes: [
-    'id_ligne', 'id_ticket', 'code_article', 'nom_article',
-    'quantite', 'prix_unitaire_applique', 'tarif_applique', 'sous_total',
-  ],
-  mouvements: [
-    'id', 'code_article', 'type_mouvement',
-    'quantite', 'date', 'id_utilisateur', 'reference',
-  ],
+  tickets: ['id_ticket', 'date_heure', 'type_vente', 'montant_total', 'montant_recu', 'monnaie_rendue', 'id_caissier', 'nom_caissier'],
+  lignes: ['id_ligne', 'id_ticket', 'code_article', 'nom_article', 'quantite', 'prix_unitaire_applique', 'tarif_applique', 'sous_total'],
+  mouvements: ['id', 'code_article', 'type_mouvement', 'quantite', 'date', 'id_utilisateur', 'reference'],
 } as const;
+
+// ── Taille d'un bloc de chargement ────────────────────────────
+const BLOC = 100;
 
 @Injectable({ providedIn: 'root' })
 export class DataService {
+
+  constructor() {
+    console.log("in constructeur dataservice")
+    this.initAppData()
+      .then(() => console.log("end constructor dataservice "))
+      .catch(err => console.error('initAppData error', err));
+  }
 
   private cache = inject(CacheService);
   private queue = inject(SheetsQueueServiceService);
   private sheets = inject(GoogleSheetsService);
 
-  // ── Init ───────────────────────────────────────────────────────
-  // Appelé une seule fois au démarrage (app.component ou auth guard)
+  // ══════════════════════════════════════════════════════════════
+  // DÉMARRAGE — appelé une seule fois au lancement de l'app
+  // 1. Crée les feuilles si elles n'existent pas
+  // 2. Charge articles + users (nécessaires pour se connecter)
+  // 3. Lance en arrière-plan : tickets, lignes, mouvements du mois
+  // ══════════════════════════════════════════════════════════════
   async initAppData(): Promise<void> {
     await this.ensureSheets();
-
-    // Données permanentes
-    const [rawArt, rawUsers] = await this.batchFetch([
-      `${SHEET.articles}!A:J`,
-      `${SHEET.users}!A:E`,
-    ]);
-    this.cache.setArticles(this.parse<Article>(rawArt, H.articles));
-    this.cache.setUsers(this.parse<AppUser>(rawUsers, H.users));
-
-    // Si aucun utilisateur dans Sheets, créer l'admin de test automatiquement
+    await this.chargerUsers();
     await this.ensureAdminTest();
+    await this.chargerArticles();
 
-    // Données du mois courant (tickets + lignes + mouvements)
-    await this.loadCurrentMonth();
+    // Arrière-plan : l'UI est déjà disponible pendant ce chargement
+    this.chargerEnArrierePlan(sheetMonth('SM_TICKETS'), H.tickets, (rows) => this.cache.setTickets(this.parse(rows, H.tickets)));
+    this.chargerEnArrierePlan(sheetMonth('SM_LIGNES'), H.lignes, (rows) => this.cache.setLignes(this.parse(rows, H.lignes)));
+    this.chargerEnArrierePlan(sheetMonth('SM_MOUVEMENTS'), H.mouvements, (rows) => this.cache.setMouvements(this.parse(rows, H.mouvements)));
   }
 
-  // Charge tickets, lignes, mouvements du mois courant
-  async loadCurrentMonth(): Promise<void> {
-    const [rawT, rawL, rawM] = await this.batchFetch([
-      `${sheetMonth('SM_TICKETS')}!A:H`,
-      `${sheetMonth('SM_LIGNES')}!A:H`,
-      `${sheetMonth('SM_MOUVEMENTS')}!A:G`,
-    ]);
-    this.cache.setTickets(this.parse<Ticket>(rawT, H.tickets));
-    this.cache.setLignes(this.parse<LigneVente>(rawL, H.lignes));
-    this.cache.setMouvements(this.parse<MouvementStock>(rawM, H.mouvements));
+  // ══════════════════════════════════════════════════════════════
+  // CŒUR — Chargement par blocs de 100 lignes
+  // Lit la feuille 100 lignes à la fois jusqu'à ne plus rien trouver
+  // Appelle onBloc() à chaque bloc pour alimenter le cache au fur et à mesure
+  // ══════════════════════════════════════════════════════════════
+  private async chargerEnArrierePlan(
+    feuille: string,
+    headers: readonly string[],
+    onBloc: (rows: any[][]) => void
+  ): Promise<void> {
+    let debut = 2; // ligne 1 = en-têtes, on commence à la ligne 2
+
+    while (true) {
+      const plage = `${feuille}!A${debut}:Z${debut + BLOC - 1}`; // ex: !A2:Z101
+      const lignes = await this.sheets.getRange(plage);
+
+      if (!lignes?.length) break;       // plus rien → terminé
+      onBloc(lignes);                   // alimente le cache avec ce bloc
+      if (lignes.length < BLOC) break;  // bloc incomplet → c'était le dernier
+      debut += BLOC;                    // passe au bloc suivant
+    }
   }
 
-  // Charge un mois précis (historique) — ex: 2026, 4 = avril 2026
-  async loadMonth(year: number, month: number): Promise<{
-    tickets: Ticket[]; lignes: LigneVente[];
-  }> {
+  // ── Chargement articles ────────────────────────────────────────
+  private async chargerArticles(): Promise<void> {
+    const tous: Article[] = [];
+    await this.chargerEnArrierePlan(SHEET.articles, H.articles, (rows) => {
+      tous.push(...this.parse<Article>(rows, H.articles));
+    });
+    this.cache.setArticles(tous);
+  }
+
+  // ── Chargement users ───────────────────────────────────────────
+  private async chargerUsers(): Promise<void> {
+    const tous: AppUser[] = [];
+    await this.chargerEnArrierePlan(SHEET.users, H.users, (rows) => {
+      tous.push(...this.parse<AppUser>(rows, H.users));
+    });
+    this.cache.setUsers(tous);
+  }
+
+  // ── Charge un mois précis à la demande (historique) ───────────
+  // Ex : loadMonth(2026, 4) → avril 2026
+  async loadMonth(year: number, month: number): Promise<{ tickets: Ticket[]; lignes: LigneVente[] }> {
     const d = new Date(year, month - 1);
-    const [rawT, rawL] = await this.batchFetch([
-      `${sheetMonth('SM_TICKETS', d)}!A:H`,
-      `${sheetMonth('SM_LIGNES', d)}!A:H`,
-    ]);
-    return {
-      tickets: this.parse<Ticket>(rawT, H.tickets),
-      lignes: this.parse<LigneVente>(rawL, H.lignes),
-    };
+    const tickets: Ticket[] = [];
+    const lignes: LigneVente[] = [];
+
+    await this.chargerEnArrierePlan(sheetMonth('SM_TICKETS', d), H.tickets, (rows) => tickets.push(...this.parse<Ticket>(rows, H.tickets)));
+    await this.chargerEnArrierePlan(sheetMonth('SM_LIGNES', d), H.lignes, (rows) => lignes.push(...this.parse<LigneVente>(rows, H.lignes)));
+
+    return { tickets, lignes };
   }
 
   // ── Articles ───────────────────────────────────────────────────
 
   async addArticle(a: Article): Promise<void> {
     this.cache.upsertArticle(a);
-    this.queue.enqueue(
-      { sheetName: SHEET.articles, rowData: this.toRow(a, H.articles) },
-      'addRow'
-    );
+    this.queue.enqueue({ sheetName: SHEET.articles, rowData: this.toRow(a, H.articles) }, 'addRow');
   }
 
   async updateArticle(a: Article): Promise<void> {
     this.cache.upsertArticle(a);
     const row = await this.sheets.findRowById(SHEET.articles, a.code_article);
     if (row === -1) return this.addArticle(a);
-    this.queue.enqueue(
-      { sheetName: SHEET.articles, row, col: 1, values: this.toRow(a, H.articles) },
-      'updateRow'
-    );
+    this.queue.enqueue({ sheetName: SHEET.articles, row, col: 1, values: this.toRow(a, H.articles) }, 'updateRow');
   }
 
   async deleteArticle(code: string): Promise<void> {
@@ -125,78 +141,29 @@ export class DataService {
     this.queue.enqueue({ sheetName: SHEET.articles, rowIndex: row - 1 }, 'deleteRow');
   }
 
-  // Réapprovisionner : met à jour stock + crée mouvement ENTREE
+  // Ajoute du stock + crée un mouvement ENTREE automatiquement
   async reapprovisionner(code: string, qte: number, idUser: string): Promise<void> {
     const article = this.cache.getArticles().find(a => a.code_article === code);
     if (!article) return;
-
-    const updated = { ...article, stock_actuel: +article.stock_actuel + qte };
-
-    await this.updateArticle(updated);
-    // this.cache.incrementStock(code, qte);
-
-    const mouvement: MouvementStock = {
-      id: `MV-${Date.now()}`,
-      code_article: code,
-      type_mouvement: 'ENTREE',
-      quantite: qte,
-      date: new Date().toISOString(),
-      id_utilisateur: idUser,
-      reference: 'REAPPRO',
-    };
-    this.addMouvement(mouvement);
+    await this.updateArticle({ ...article, stock_actuel: +article.stock_actuel + qte });
+    this.addMouvement({ id: `MV-${Date.now()}`, code_article: code, type_mouvement: 'ENTREE', quantite: qte, date: new Date().toISOString(), id_utilisateur: idUser, reference: 'REAPPRO' });
   }
 
-  // ── Vente complète (ticket + lignes + mouvements stock) ────────
+  // ── Vente : ticket + lignes + décréments stock ─────────────────
   async enregistrerVente(ticket: Ticket, lignes: LigneVente[]): Promise<void> {
-    const sheetT = sheetMonth('SM_TICKETS');
-    const sheetL = sheetMonth('SM_LIGNES');
-    const sheetMv = sheetMonth('SM_MOUVEMENTS');
-
-    // 1. Ticket
     this.cache.addTicket(ticket);
-    this.queue.enqueue(
-      { sheetName: sheetT, rowData: this.toRow(ticket, H.tickets) },
-      'addRow'
-    );
+    this.queue.enqueue({ sheetName: sheetMonth('SM_TICKETS'), rowData: this.toRow(ticket, H.tickets) }, 'addRow');
 
-    // 2. Lignes + décréments stock
     for (const l of lignes) {
       this.cache.addLignes([l]);
-      this.queue.enqueue(
-        { sheetName: sheetL, rowData: this.toRow(l, H.lignes) },
-        'addRow'
-      );
+      this.queue.enqueue({ sheetName: sheetMonth('SM_LIGNES'), rowData: this.toRow(l, H.lignes) }, 'addRow');
 
-      // Décrément stock article
       const art = this.cache.getArticles().find(a => a.code_article === l.code_article);
       if (art) {
         const updated = { ...art, stock_actuel: Math.max(0, art.stock_actuel - l.quantite) };
         this.cache.upsertArticle(updated);
-        this.queue.enqueue(
-          {
-            sheetName: SHEET.articles,
-            row: -1, // findRowById appelé par updateArticle
-            col: 1, values: this.toRow(updated, H.articles)
-          },
-          'updateRow'
-        );
-
-        // Mouvement SORTIE_VENTE
-        const mv: MouvementStock = {
-          id: `MV-${Date.now()}-${l.code_article}`,
-          code_article: l.code_article,
-          type_mouvement: 'SORTIE_VENTE',
-          quantite: l.quantite,
-          date: ticket.date_heure,
-          id_utilisateur: ticket.id_caissier,
-          reference: ticket.id_ticket,
-        };
-        this.cache.addMouvement(mv);
-        this.queue.enqueue(
-          { sheetName: sheetMv, rowData: this.toRow(mv, H.mouvements) },
-          'addRow'
-        );
+        this.queue.enqueue({ sheetName: SHEET.articles, row: -1, col: 1, values: this.toRow(updated, H.articles) }, 'updateRow');
+        this.addMouvement({ id: `MV-${Date.now()}-${l.code_article}`, code_article: l.code_article, type_mouvement: 'SORTIE_VENTE', quantite: l.quantite, date: ticket.date_heure, id_utilisateur: ticket.id_caissier, reference: ticket.id_ticket });
       }
     }
   }
@@ -205,20 +172,14 @@ export class DataService {
 
   addUser(u: AppUser): void {
     this.cache.upsertUser(u);
-    this.queue.enqueue(
-      { sheetName: SHEET.users, rowData: this.toRow(u, H.users) },
-      'addRow'
-    );
+    this.queue.enqueue({ sheetName: SHEET.users, rowData: this.toRow(u, H.users) }, 'addRow');
   }
 
   updateUser(u: AppUser): void {
     this.cache.upsertUser(u);
     this.sheets.findRowById(SHEET.users, u.id).then(row => {
       if (row === -1) return this.addUser(u);
-      this.queue.enqueue(
-        { sheetName: SHEET.users, row, col: 1, values: this.toRow(u, H.users) },
-        'updateRow'
-      );
+      this.queue.enqueue({ sheetName: SHEET.users, row, col: 1, values: this.toRow(u, H.users) }, 'updateRow');
     });
   }
 
@@ -230,38 +191,31 @@ export class DataService {
     });
   }
 
-  getUsers(): AppUser[] {
-    return this.cache.getUsers();
-  }
+  getUsers(): AppUser[] { return this.cache.getUsers(); }
 
   // ── Helpers privés ─────────────────────────────────────────────
 
-  // Si la feuille SM_USERS est vide, insère l'admin de test dans Sheets et le cache.
-  // Cela garantit qu'on peut toujours se connecter lors du premier démarrage.
+  // Si aucun user au premier démarrage → crée l'admin de test
   private async ensureAdminTest(): Promise<void> {
-    if (this.cache.getUsers().length > 0) return; // des users existent déjà — rien à faire
+    if (this.cache.getUsers().length > 0) return;
     this.cache.upsertUser(ADMIN_TEST);
-    this.queue.enqueue(
-      { sheetName: SHEET.users, rowData: this.toRow(ADMIN_TEST, H.users) },
-      'addRow'
-    );
+    this.queue.enqueue({ sheetName: SHEET.users, rowData: this.toRow(ADMIN_TEST, H.users) }, 'addRow');
   }
 
   private addMouvement(m: MouvementStock): void {
     this.cache.addMouvement(m);
-    this.queue.enqueue(
-      { sheetName: sheetMonth('SM_MOUVEMENTS'), rowData: this.toRow(m, H.mouvements) },
-      'addRow'
-    );
+    this.queue.enqueue({ sheetName: sheetMonth('SM_MOUVEMENTS'), rowData: this.toRow(m, H.mouvements) }, 'addRow');
   }
 
+  // Convertit un objet en tableau selon l'ordre des en-têtes
   private toRow(obj: any, headers: readonly string[]): any[] {
     return headers.map(k => obj[k] ?? '');
   }
 
+  // Convertit des lignes brutes Sheets en objets typés (sans la ligne d'en-tête)
   private parse<T>(rows: any[][], headers: readonly string[]): T[] {
     if (!rows?.length) return [];
-    return rows.slice(1)
+    return rows
       .filter(r => r.length && r[0])
       .map(row => {
         const obj: any = {};
@@ -270,21 +224,22 @@ export class DataService {
       });
   }
 
-  private async batchFetch(ranges: string[]): Promise<any[][][]> {
-    const res = await this.sheets.batchGet(ranges);
-    // batchGet retourne [data, meta, data, meta…] — on garde les data
-    return res.filter((_, i) => i % 2 === 0);
-  }
-
-  // Crée toutes les feuilles nécessaires si elles n'existent pas
+  // Crée les feuilles du mois si elles n'existent pas encore dans Sheets
   async ensureSheets(): Promise<void> {
-    const tasks = [
-      { sheetName: SHEET.articles, headers: [...H.articles] },
-      { sheetName: SHEET.users, headers: [...H.users] },
-      { sheetName: sheetMonth('SM_TICKETS'), headers: [...H.tickets] },
-      { sheetName: sheetMonth('SM_LIGNES'), headers: [...H.lignes] },
-      { sheetName: sheetMonth('SM_MOUVEMENTS'), headers: [...H.mouvements] },
-    ];
-    await Promise.all(tasks.map(t => this.sheets.createSheet(t)));
+    await Promise.all([
+      this.sheets.createSheet({ sheetName: SHEET.articles, headers: [...H.articles] }),
+      this.sheets.createSheet({ sheetName: SHEET.users, headers: [...H.users] }),
+      this.sheets.createSheet({ sheetName: sheetMonth('SM_TICKETS'), headers: [...H.tickets] }),
+      this.sheets.createSheet({ sheetName: sheetMonth('SM_LIGNES'), headers: [...H.lignes] }),
+      this.sheets.createSheet({ sheetName: sheetMonth('SM_MOUVEMENTS'), headers: [...H.mouvements] }),
+    ]);
+  }
+  // Vide tout le cache local (utile avant un rechargement forcé depuis Sheets)
+  invalidateCache(): void {
+    this.cache.setArticles([]);
+    this.cache.setUsers([]);
+    this.cache.setTickets([]);
+    this.cache.setLignes([]);
+    this.cache.setMouvements([]);
   }
 }

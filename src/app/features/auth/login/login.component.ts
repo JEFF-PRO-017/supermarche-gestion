@@ -1,11 +1,10 @@
 // login.component.ts
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { AuthService, ADMIN_TEST } from '../../../core/services/auth.service';
-import { DataService } from '../../../core/services/data.service';
-import { CacheService } from '../../../core/services/cache.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -23,29 +22,9 @@ import { CacheService } from '../../../core/services/cache.service';
                  style="width:60px;height:60px">
               <i class="fa-solid fa-store text-success fa-xl"></i>
             </div>
-            <h5 class="fw-bold mb-0">Supermarché Étoile</h5>
+            <h5 class="fw-bold mb-0">{{app_name}}</h5>
             <small class="text-muted">Système de gestion</small>
           </div>
-
-          <!-- Encart admin de test — visible uniquement si Sheets est vide -->
-          @if (afficherAdminTest()) {
-            <div class="alert alert-info py-2 mb-3 small">
-              <div class="fw-semibold mb-1">
-                <i class="fa-solid fa-circle-info me-1"></i>
-                Compte de test disponible
-              </div>
-              <div>
-                Identifiant : <code class="user-select-all">{{ adminTest.username }}</code>
-              </div>
-              <div>
-                Mot de passe : <code class="user-select-all">{{ adminTest.mot_de_passe }}</code>
-              </div>
-              <div class="text-muted mt-1" style="font-size:10px">
-                Visible uniquement si aucun utilisateur n'est enregistré dans Sheets.
-                Créez un vrai admin via la page Utilisateurs puis désactivez ce compte.
-              </div>
-            </div>
-          }
 
           <!-- Message d'erreur identifiants invalides -->
           @if (erreur()) {
@@ -65,7 +44,7 @@ import { CacheService } from '../../../core/services/cache.service';
               <input type="text"
                      class="form-control form-control-lg"
                      [(ngModel)]="username"
-                     placeholder="ex: admin"
+                     placeholder="ex: jean.pierre"
                      (keyup.enter)="login()"
                      autocomplete="username" />
             </div>
@@ -115,40 +94,24 @@ import { CacheService } from '../../../core/services/cache.service';
     </div>
   `,
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent {
 
-  private auth   = inject(AuthService);
-  private data$  = inject(DataService);
-  private cache  = inject(CacheService);
+  private auth = inject(AuthService);
   private router = inject(Router);
 
-  username    = '';
-  password    = '';
-  erreur      = signal(false);
-  chargement  = signal(false);
+  username = '';
+  password = '';
+  erreur = signal(false);
+  chargement = signal(false);
   afficherPwd = signal(false);
-
-  readonly adminTest = ADMIN_TEST;
-
-  // Encart de test visible uniquement si aucun utilisateur dans Sheets
-  afficherAdminTest = computed(() => this.cache.getUsers().length === 0);
-
-  // ── Cycle de vie ─────────────────────────────────────────────
-  // ngOnInit s'exécute après le rendu DOM — crypto.subtle est disponible ici.
-  // ensureSheets tourne en arrière-plan sans bloquer l'affichage du formulaire.
-  ngOnInit(): void {
-    setTimeout(() => this.data$.ensureSheets(), 6000);
-  }
-
+  app_name = environment.app_name;
+  
   // ── Connexion ────────────────────────────────────────────────
   async login(): Promise<void> {
     if (!this.username.trim() || !this.password) return;
 
     this.chargement.set(true);
     this.erreur.set(false);
-
-    // Chargement des données depuis Sheets (crée aussi l'admin de test si Sheets est vide)
-    await this.data$.initAppData();
 
     const succes = this.auth.login(this.username.trim(), this.password);
 

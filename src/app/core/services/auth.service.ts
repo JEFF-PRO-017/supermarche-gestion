@@ -1,100 +1,126 @@
 // auth.service.ts
-import { Injectable, inject, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed, NgZone } from '@angular/core';
 import { Router } from '@angular/router';
 import { CacheService } from './cache.service';
 import { AppUser, Role } from '../models/supermarche.models';
 
-// ── Clé session navigateur ────────────────────────────────────
 const SESSION_KEY = 'sm_user';
 
-// ── Compte admin de test ──────────────────────────────────────
-// Utilisé comme fallback si Sheets ne retourne aucun utilisateur.
-// IMPORTANT : désactiver en production une fois le vrai admin créé dans Sheets.
+// ── Délais d'inactivité ───────────────────────────────────────
+const DELAI_PROD = 20 * 60 * 1000; // 20 minutes en production
+const DELAI_TEST = 2 * 60 * 1000; //  2 minutes pour les tests
+const DELAI = DELAI_PROD;            // ← changer en DELAI_PROD pour la prod
+
+// ── Événements qui prouvent que l'utilisateur est actif ───────
+const EVENEMENTS_ACTIVITE = ['click', 'keydown', 'touchstart', 'scroll'] as const;
+
 export const ADMIN_TEST: AppUser = {
-  id:           'USR-ADMIN-TEST',
-  username:     'admin',
-  mot_de_passe: 'admin123',
-  nom:          'Administrateur Test',
-  role:         'ADMIN',
+  id: 'USR-ADMIN-TEST',
+  username: 'admin',
+  mot_de_passe: 'admin0117',
+  nom: 'Administrateur Test',
+  role: 'ADMIN',
 };
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
 
-  private cache  = inject(CacheService);
+  private cache = inject(CacheService);
   private router = inject(Router);
+  private zone = inject(NgZone);
 
-  // Signal : utilisateur connecté — restauré depuis sessionStorage au démarrage
   private _user = signal<AppUser | null>(this.restaurerSession());
+  private timer: any;
 
-  // Signaux publics en lecture seule
   readonly user = this._user.asReadonly();
   readonly role = computed<Role | null>(() => this._user()?.role ?? null);
-
-  // Vrai si le rôle est ADMIN (accès total : bénéfices, utilisateurs, suppression)
   readonly isAdmin = computed(() => this._user()?.role === 'ADMIN');
-
-  // Vrai si le rôle est ADMIN ou GERANT (gestion articles, réappro, historique complet)
   readonly isGerant = computed(() =>
     this._user()?.role === 'ADMIN' || this._user()?.role === 'GERANT'
   );
 
-  // Vrai si une session est ouverte (peu importe le rôle)
   isLoggedIn(): boolean { return this._user() !== null; }
 
   // ── Connexion ──────────────────────────────────────────────────
-  // 1. Cherche dans le cache (utilisateurs chargés depuis Sheets)
-  // 2. Si le cache est vide (Sheets non branché), accepte le compte ADMIN_TEST
-  // Retourne true si les identifiants sont valides, false sinon.
   login(username: string, password: string): boolean {
     const usersSheets = this.cache.getUsers();
 
-    // Recherche dans les comptes Sheets
     const trouve = usersSheets.find(
-      u => u.username.trim() === username.trim()
-        && u.mot_de_passe   === password
+      u => u.username.trim() === username.trim() && u.mot_de_passe === password
     );
 
-    if (trouve) {
-      this.ouvrirSession(trouve);
-      return true;
-    }
+    if (trouve) { this.ouvrirSession(trouve); return true; }
 
-    // Fallback admin de test — actif uniquement si Sheets est vide
-    if (
-      usersSheets.length === 0
-      && username === ADMIN_TEST.username
+    if (username === ADMIN_TEST.username
       && password === ADMIN_TEST.mot_de_passe
     ) {
       this.ouvrirSession(ADMIN_TEST);
       return true;
     }
-
     return false;
   }
 
   // ── Déconnexion ────────────────────────────────────────────────
   logout(): void {
+    this.arreterSurveillance();
     this._user.set(null);
     sessionStorage.removeItem(SESSION_KEY);
     this.router.navigate(['/login']);
   }
 
+  // ── Inactivité — démarre la surveillance après connexion ───────
+  // On sort de la zone Angular pour que mousemove/scroll ne déclenchent
+  // pas la détection de changements à chaque événement (perf mobile++)
+  private demarrerSurveillance(): void {
+    this.zone.runOutsideAngular(() => {
+      EVENEMENTS_ACTIVITE.forEach(e =>
+        window.addEventListener(e, this.onActivite, { passive: true })
+      );
+      this.resetTimer();
+    });
+  }
+
+  // Nettoie les listeners et le timer à la déconnexion
+  private arreterSurveillance(): void {
+    clearTimeout(this.timer);
+    EVENEMENTS_ACTIVITE.forEach(e =>
+      window.removeEventListener(e, this.onActivite)
+    );
+  }
+
+  // Réinitialise le timer à chaque signe d'activité
+  // Défini en arrow function pour conserver le contexte `this` dans removeEventListener
+  private onActivite = (): void => {
+    this.resetTimer();
+  };
+
+  private resetTimer(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      // On rentre dans la zone Angular pour que le router et les signals fonctionnent
+      this.zone.run(() => {
+        console.info('[AuthService] Déconnexion pour inactivité');
+        this.logout();
+      });
+    }, DELAI);
+  }
+
   // ── Helpers privés ─────────────────────────────────────────────
 
-  // Met à jour le signal et persiste la session dans sessionStorage
   private ouvrirSession(user: AppUser): void {
     this._user.set(user);
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    this.demarrerSurveillance(); // démarre la surveillance dès la connexion
   }
 
-  // Restaure la session au rechargement de page (F5, retour PWA)
   private restaurerSession(): AppUser | null {
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
-      return raw ? (JSON.parse(raw) as AppUser) : null;
+      if (!raw) return null;
+      // Session restaurée (F5 / retour PWA) → relance la surveillance
+      setTimeout(() => this.demarrerSurveillance());
+      return JSON.parse(raw) as AppUser;
     } catch {
-      // JSON corrompu — nettoyage propre
       sessionStorage.removeItem(SESSION_KEY);
       return null;
     }
