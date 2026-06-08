@@ -106,9 +106,9 @@ import { ScanService } from '../../../core/services/ScanService';
             <span class="small text-muted">Modifiable avant chaque scan</span>
           </div>
           @if (scanSv.mode() === 'camera') {
-            <div class="mb-3">
+            <!-- <div class="mb-3">
               <app-barcode-scanner />
-            </div>
+            </div> -->
           }
           <!-- Notif ajout -->
           @if (notif()) {

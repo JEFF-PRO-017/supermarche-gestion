@@ -66,7 +66,7 @@ import { downloadBarcodeSVG, downloadAllBarcodesWord } from '../../../core/servi
         [totalAll]="cache.getArticles().length"
         [totalFiltered]="articlesFiltres().length"
         [pageSize]="pag().pageSize"
-        [pageSizeOptions]="[10, 20, 50]"
+        [pageSizeOptions]="[5,10, 20, 50]"
         (filterChange)="onFilter($event)"
         (pageSizeChange)="onPageSize($event)"
       />

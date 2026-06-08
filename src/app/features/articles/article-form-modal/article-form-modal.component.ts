@@ -194,7 +194,7 @@ export class ArticleFormModalComponent implements OnInit {
     }
   }
 
-  async sauvegarder() {
+   sauvegarder() {
     if (this.form.invalid) return;
     this.saving.set(true);
     const val = { ...this.form.getRawValue() } as Article;
@@ -205,7 +205,7 @@ export class ArticleFormModalComponent implements OnInit {
     val.stock_actuel      = +val.stock_actuel;
     val.seuil_alerte      = +val.seuil_alerte;
     val.stock_maximum     = +val.stock_maximum || 0;
-    this.isEdit ? await this.data$.updateArticle(val) : await this.data$.addArticle(val);
+    this.isEdit ?  this.data$.updateArticle(val) :  this.data$.addArticle(val);
     this.saving.set(false);
     this.closeModal(true);
   }

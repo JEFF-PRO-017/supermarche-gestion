@@ -26,18 +26,27 @@ export interface ReapproData { article: Article; }
           <div class="modal-body">
             <p class="text-muted mb-3">
               Article : <strong>{{ data.article.nom }}</strong><br>
-              Stock actuel : <strong>{{ data.article.stock_actuel }}</strong>
+              Stock actuel : <strong>{{ data.article.stock_actuel }}</strong> <br>
+              Seuil d'alerte : <strong>{{ data.article.seuil_alerte }}</strong><br>
+              Stock maximum : <strong>{{ data.article.stock_maximum }}</strong>
             </p>
             <label class="form-label small fw-semibold">Quantité à ajouter</label>
-            <input type="number" class="form-control" [(ngModel)]="qte" min="1" />
+          <input type="number" class="form-control"
+                [(ngModel)]="qte"
+                [min]="1"
+                [max]="maxQte()"
+                (ngModelChange)="clamp()" />
+          <p class="text-muted small">
+            Max : {{ maxQte() }}
+          </p>
           </div>
 
           <div class="modal-footer">
             <button class="btn btn-secondary" (click)="closeModal()">Annuler</button>
-            <button class="btn btn-success" [disabled]="!qte || qte < 1"
-                    (click)="confirmer()">
-              <i class="fa-solid fa-check me-1"></i> Valider
-            </button>
+          <button class="btn btn-success" [disabled]="!qteValide()"
+                  (click)="confirmer()">
+            <i class="fa-solid fa-check me-1"></i> Valider
+          </button>
           </div>
 
         </div>
@@ -50,13 +59,28 @@ export class ReapproModalComponent {
   @Input() closeModal!: (result?: any) => void;
 
   private data$ = inject(DataService);
-  private auth  = inject(AuthService);
+  private auth = inject(AuthService);
 
   qte = 1;
 
-  async confirmer() {
-    if (!this.qte || this.qte < 1) return;
-    await this.data$.reapprovisionner(
+  maxQte(): number {
+    return this.data.article.stock_maximum - this.data.article.stock_actuel;
+  }
+
+  // Appelé à chaque frappe — force la valeur dans [1, max]
+  clamp(): void {
+    const max = this.maxQte();
+    if (this.qte < 1 || isNaN(this.qte)) this.qte = 1;
+    // if (this.qte > max)                    this.qte = max;
+  }
+
+  qteValide(): boolean {
+    return !!this.qte && this.qte >= 1 && this.qte <= this.maxQte();
+  }
+
+  confirmer() {
+    if (!this.qteValide()) return;
+    this.data$.reapprovisionner(
       this.data.article.code_article,
       this.qte,
       this.auth.user()?.id ?? ''

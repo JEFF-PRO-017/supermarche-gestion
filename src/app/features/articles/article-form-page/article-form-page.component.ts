@@ -194,33 +194,33 @@ import { Article } from '../../../core/models/supermarche.models';
   `,
 })
 export class ArticleFormPageComponent implements OnInit {
-  private data$  = inject(DataService);
-  private cache  = inject(CacheService);
+  private data$ = inject(DataService);
+  private cache = inject(CacheService);
   private prixSv = inject(PrixService);
-  private fb     = inject(FormBuilder);
+  private fb = inject(FormBuilder);
   private router = inject(Router);
-  private route  = inject(ActivatedRoute);
+  private route = inject(ActivatedRoute);
 
-  isEdit       = false;
-  saving       = signal<string>('');       // 'catalogue' | 'nouveau' | 'rester' | ''
+  isEdit = false;
+  saving = signal<string>('');       // 'catalogue' | 'nouveau' | 'rester' | ''
   messageRetour = signal('');
 
-  margeDetail    = signal<number | null>(null);
-  margeGros      = signal<number | null>(null);
+  margeDetail = signal<number | null>(null);
+  margeGros = signal<number | null>(null);
   margePctDetail = signal<number | null>(null);
-  margePctGros   = signal<number | null>(null);
+  margePctGros = signal<number | null>(null);
 
   form = this.fb.group({
-    code_article:      ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
-    nom:               ['', Validators.required],
-    description:       [''],
-    prix_achat:        [0, [Validators.required, Validators.min(0)]],
-    prix_detail:       [0, [Validators.required, Validators.min(1)]],
-    prix_grossiste:    [0, [Validators.required, Validators.min(1)]],
+    code_article: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+    nom: ['', Validators.required],
+    description: [''],
+    prix_achat: [0, [Validators.required, Validators.min(0)]],
+    prix_detail: [0, [Validators.required, Validators.min(1)]],
+    prix_grossiste: [0, [Validators.required, Validators.min(1)]],
     qte_min_grossiste: [1, [Validators.required, Validators.min(1)]],
-    stock_actuel:      [0, Validators.required],
-    seuil_alerte:      [10, [Validators.required, Validators.min(1)]],
-    stock_maximum:     [0],
+    stock_actuel: [0, Validators.required],
+    seuil_alerte: [10, [Validators.required, Validators.min(1)]],
+    stock_maximum: [0],
   });
 
   ngOnInit(): void {
@@ -237,9 +237,10 @@ export class ArticleFormPageComponent implements OnInit {
   }
 
   genCode(): void {
-    this.form.get('code_article')?.setValue(
-      String(Math.floor(Math.random() * 90000) + 10000)
-    );
+    const code = String(Math.floor(Math.random() * 90000) + 10000)
+    const article = this.cache.getArticles().find(a => a.code_article === code)
+    if (article) return this.genCode()
+    this.form.get('code_article')?.setValue(code);
   }
 
   estInvalide(champ: string): boolean {
@@ -248,8 +249,8 @@ export class ArticleFormPageComponent implements OnInit {
   }
 
   calcMarge(): void {
-    const pa = +this.form.value.prix_achat!  || 0;
-    const pd = +this.form.value.prix_detail!  || 0;
+    const pa = +this.form.value.prix_achat! || 0;
+    const pd = +this.form.value.prix_detail! || 0;
     const pg = +this.form.value.prix_grossiste! || 0;
     if (pa > 0 && pd > 0) {
       this.margeDetail.set(this.prixSv.margeValeur(pd, pa));
@@ -267,16 +268,16 @@ export class ArticleFormPageComponent implements OnInit {
 
     const val = { ...this.form.getRawValue() } as Article;
     // Convertir les valeurs numériques (inputs retournent des strings)
-    val.prix_achat        = +val.prix_achat;
-    val.prix_detail       = +val.prix_detail;
-    val.prix_grossiste    = +val.prix_grossiste;
+    val.prix_achat = +val.prix_achat;
+    val.prix_detail = +val.prix_detail;
+    val.prix_grossiste = +val.prix_grossiste;
     val.qte_min_grossiste = +val.qte_min_grossiste;
-    val.stock_actuel      = +val.stock_actuel;
-    val.seuil_alerte      = +val.seuil_alerte;
-    val.stock_maximum     = +val.stock_maximum || 0;
+    val.stock_actuel = +val.stock_actuel;
+    val.seuil_alerte = +val.seuil_alerte;
+    val.stock_maximum = +val.stock_maximum || 0;
 
     if (this.isEdit) await this.data$.updateArticle(val);
-    else             await this.data$.addArticle(val);
+    else await this.data$.addArticle(val);
 
     this.saving.set('');
 
@@ -284,7 +285,7 @@ export class ArticleFormPageComponent implements OnInit {
       this.router.navigate(['/catalogue']);
     } else if (action === 'nouveau') {
       // Vider le formulaire pour saisir un nouvel article
-      this.form.reset({ prix_achat:0, prix_detail:0, prix_grossiste:0, qte_min_grossiste:1, stock_actuel:0, seuil_alerte:10, stock_maximum:0 });
+      this.form.reset({ prix_achat: 0, prix_detail: 0, prix_grossiste: 0, qte_min_grossiste: 1, stock_actuel: 0, seuil_alerte: 10, stock_maximum: 0 });
       this.form.get('code_article')?.enable();
       this.isEdit = false;
       this.margeDetail.set(null); this.margeGros.set(null);

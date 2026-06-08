@@ -5,10 +5,11 @@ import { CacheService } from './cache.service';
 import { AppUser, Role } from '../models/supermarche.models';
 
 const SESSION_KEY = 'sm_user';
+// private readonly STORAGE_LAST_ACTIVITY = 'sm_last_activity';
 
 // ── Délais d'inactivité ───────────────────────────────────────
 const DELAI_PROD = 20 * 60 * 1000; // 20 minutes en production
-const DELAI_TEST = 2 * 60 * 1000; //  2 minutes pour les tests
+const DELAI_TEST = 2* 60 * 1000; //  2 minutes pour les tests
 const DELAI = DELAI_PROD;            // ← changer en DELAI_PROD pour la prod
 
 // ── Événements qui prouvent que l'utilisateur est actif ───────
@@ -72,6 +73,7 @@ export class AuthService {
   // On sort de la zone Angular pour que mousemove/scroll ne déclenchent
   // pas la détection de changements à chaque événement (perf mobile++)
   private demarrerSurveillance(): void {
+    console.log('[AuthService] Démarrage de la surveillance d\'inactivité');
     this.zone.runOutsideAngular(() => {
       EVENEMENTS_ACTIVITE.forEach(e =>
         window.addEventListener(e, this.onActivite, { passive: true })

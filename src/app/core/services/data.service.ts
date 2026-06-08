@@ -91,10 +91,11 @@ export class DataService {
 
   // ── Chargement articles ────────────────────────────────────────
   private async chargerArticles(): Promise<void> {
-    const tous: Article[] = [];
+    let tous: Article[] = [];
     await this.chargerEnArrierePlan(SHEET.articles, H.articles, (rows) => {
       tous.push(...this.parse<Article>(rows, H.articles));
     });
+    tous = tous.map(a => ({ ...a, stock_actuel: +a.stock_actuel, seuil_alerte: +a.seuil_alerte, stock_maximum: +a.stock_maximum })); // convertit les champs numériques
     this.cache.setArticles(tous);
   }
 
