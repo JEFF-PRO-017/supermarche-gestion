@@ -12,6 +12,7 @@ import { ConfirmModalComponent } from '../../../shared/components/confirm-modal/
 import { ModalService } from '@shared/components/modal.service';
 import { FilterBarComponent, FilterBarState, FilterBarConfig } from '@shared/FilterBarComponent';
 import { PaginationComponent } from '@shared/PaginationComponent';
+import { downloadBarcodeSVG, downloadAllBarcodesWord } from '../../../core/services/ScanService';
 
 @Component({
   selector: 'app-catalogue',
@@ -31,11 +32,24 @@ import { PaginationComponent } from '@shared/PaginationComponent';
             }
           </p>
         </div>
-        @if (auth.isGerant()) {
-          <a routerLink="/articles/nouveau" class="btn btn-sm btn-primary" title="Créer un nouvel article">
-            <i class="fa-solid fa-plus me-1"></i>Nouveau
-          </a>
-        }
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary"
+                  title="Exporter tous les codes-barres Word"
+                  [disabled]="exportingWord()"
+                  (click)="telechargerTousWord()">
+            @if (exportingWord()) {
+              <span class="spinner-border spinner-border-sm me-1"></span>
+            } @else {
+              <i class="fa-solid fa-file-word me-1"></i>
+            }
+            Export Word
+          </button>
+          @if (auth.isGerant()) {
+            <a routerLink="/articles/nouveau" class="btn btn-sm btn-primary" title="Créer un nouvel article">
+              <i class="fa-solid fa-plus me-1"></i>Nouveau
+            </a>
+          }
+        </div>
       </div>
 
       <!-- Alerte stock -->
@@ -46,7 +60,7 @@ import { PaginationComponent } from '@shared/PaginationComponent';
         </div>
       }
 
-      <!-- ✅ Filtre (en haut) -->
+      <!-- Filtre -->
       <app-filter-bar
         [config]="filterConfig"
         [totalAll]="cache.getArticles().length"
@@ -103,6 +117,11 @@ import { PaginationComponent } from '@shared/PaginationComponent';
                 </td>
                 <td class="text-center">
                   <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-dark btn-sm"
+                            title="Télécharger code-barres SVG"
+                            (click)="telechargerBarcode(a)">
+                      <i class="fa-solid fa-barcode"></i>
+                    </button>
                     @if (auth.isGerant()) {
                       <button class="btn btn-outline-primary btn-sm" title="Réapprovisionner" (click)="ouvrirReappro(a)">
                         <i class="fa-solid fa-arrow-up"></i>
@@ -131,13 +150,13 @@ import { PaginationComponent } from '@shared/PaginationComponent';
         </table>
       </div>
 
-      <!-- ✅ Pagination (en bas, après le tableau) -->
-    <app-pagination
-      [page]="pag().page"
-      [total]="articlesFiltres().length"
-      [pageSize]="pag().pageSize"
-(pageChange)="onPage($event)"  
-  />
+      <!-- Pagination -->
+      <app-pagination
+        [page]="pag().page"
+        [total]="articlesFiltres().length"
+        [pageSize]="pag().pageSize"
+        (pageChange)="onPage($event)"
+      />
 
     </div>
   `
@@ -145,29 +164,37 @@ import { PaginationComponent } from '@shared/PaginationComponent';
 export class CatalogueComponent {
   protected cache = inject(CacheService);
   protected data$ = inject(DataService);
-  protected auth = inject(AuthService);
-  private modal = inject(ModalService);
+  protected auth  = inject(AuthService);
+  private modal   = inject(ModalService);
 
-  pag = signal({ page: 0, pageSize: 10 });
+  pag           = signal({ page: 0, pageSize: 10 });
+  exportingWord = signal(false);
   private filter = signal<FilterBarState>({ search: '', select: '' });
 
   readonly filterConfig: FilterBarConfig = {
     searchPlaceholder: 'Code ou nom...',
     selectOptions: [
-      { value: 'alerte', label: 'En alerte', icon: 'fa-triangle-exclamation' },
-      { value: 'ok', label: 'Stock OK', icon: 'fa-circle-check' },
+      { value: 'alerte', label: 'En alerte',  icon: 'fa-triangle-exclamation' },
+      { value: 'ok',     label: 'Stock OK',   icon: 'fa-circle-check' },
     ],
     selectPlaceholder: 'Tous',
   };
-onPage(page: number) { this.pag.update(p => ({ ...p, page })); }
+
+  onPage(page: number)     { this.pag.update(p => ({ ...p, page })); }
+  onPageSize(size: number) { this.pag.set({ page: 0, pageSize: size }); }
+  onFilter(state: FilterBarState) {
+    this.filter.set(state);
+    this.pag.update(p => ({ ...p, page: 0 }));
+  }
+
   articlesFiltres = computed(() => {
     const { search, select } = this.filter();
     const q = search.toLowerCase();
     return this.cache.getArticles().filter(a => {
-      const matchQ = !q || a.nom.toLowerCase().includes(q) || a.code_article.includes(q);
+      const matchQ = !q || a.nom.toLowerCase().includes(q) || a.code_article.toLowerCase().includes(q);
       const matchS = !select
-        || (select === 'alerte' && this.niveauAlerte(a))
-        || (select === 'ok' && !this.niveauAlerte(a));
+        || (select === 'alerte' && !!this.niveauAlerte(a))
+        || (select === 'ok'    && !this.niveauAlerte(a));
       return matchQ && matchS;
     });
   });
@@ -177,19 +204,38 @@ onPage(page: number) { this.pag.update(p => ({ ...p, page })); }
     return this.articlesFiltres().slice(page * pageSize, (page + 1) * pageSize);
   });
 
-  onFilter(state: FilterBarState) { this.filter.set(state); this.pag.update(p => ({ ...p, page: 0 })); }
-  onPageSize(size: number) { this.pag.set({ page: 0, pageSize: size }); }
+  // ── Codes-barres ────────────────────────────────────────────────────────────
+
+  telechargerBarcode(article: Article): void {
+    downloadBarcodeSVG(article);
+  }
+
+  async telechargerTousWord(): Promise<void> {
+    this.exportingWord.set(true);
+    try {
+      await downloadAllBarcodesWord(this.articlesPagines());
+    } finally {
+      this.exportingWord.set(false);
+    }
+  }
+
+  // ── Helpers affichage ───────────────────────────────────────────────────────
 
   niveauAlerte(a: Article): 'CRITIQUE' | 'FAIBLE' | null {
-    if (a.stock_actuel <= a.seuil_alerte) return 'CRITIQUE';
-    if (a.stock_actuel <= a.seuil_alerte * 1.5) return 'FAIBLE';
+    if (a.stock_actuel <= a.seuil_alerte)        return 'CRITIQUE';
+    if (a.stock_actuel <= a.seuil_alerte * 1.5)  return 'FAIBLE';
     return null;
   }
-  stockPct(a: Article) { return Math.min(100, Math.round(a.stock_actuel / (a.seuil_alerte * 8) * 100)); }
+
+  stockPct(a: Article) {
+    return Math.min(100, Math.round(a.stock_actuel / (a.seuil_alerte * 8) * 100));
+  }
+
   badgeClass(a: Article) {
     const n = this.niveauAlerte(a);
     return n === 'CRITIQUE' ? 'bg-danger' : n === 'FAIBLE' ? 'bg-warning text-dark' : 'bg-success';
   }
+
   badgeLabel(a: Article) {
     const n = this.niveauAlerte(a);
     return n === 'CRITIQUE' ? 'Rupture imminente' : n === 'FAIBLE' ? 'Stock faible' : 'En stock';
@@ -201,13 +247,18 @@ onPage(page: number) { this.pag.update(p => ({ ...p, page })); }
     { bg: '#FAEEDA', tc: '#854F0B' }, { bg: '#FBEAF0', tc: '#993556' },
     { bg: '#EEEDFE', tc: '#534AB7' }, { bg: '#FCEBEB', tc: '#A32D2D' },
   ];
-  couleur(a: Article) { return this.PALETTES[parseInt(a.code_article) % this.PALETTES.length] ?? this.PALETTES[0]; }
+  couleur(a: Article) {
+    return this.PALETTES[parseInt(a.code_article) % this.PALETTES.length] ?? this.PALETTES[0];
+  }
+
+  // ── Modals ──────────────────────────────────────────────────────────────────
 
   ouvrirFormulaire(article?: Article) { this.modal.open(ArticleFormModalComponent, { article }); }
-  ouvrirReappro(article: Article) { this.modal.open(ReapproModalComponent, { article }); }
+  ouvrirReappro(article: Article)     { this.modal.open(ReapproModalComponent, { article }); }
+
   async supprimer(article: Article) {
     const ok = await this.modal.open(ConfirmModalComponent, {
-      titre: 'Supprimer un article',
+      titre:   'Supprimer un article',
       message: `Supprimer définitivement « ${article.nom} » ?`,
     });
     if (ok) this.data$.deleteArticle(article.code_article);

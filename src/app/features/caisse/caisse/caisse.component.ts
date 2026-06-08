@@ -3,7 +3,6 @@ import { Component, inject, signal, computed, ViewChild, ElementRef } from '@ang
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { CacheService } from '../../../core/services/cache.service';
 import { DataService } from '../../../core/services/data.service';
 import { AuthService } from '../../../core/services/auth.service';
@@ -14,10 +13,18 @@ import {
   Article, LignePanier, Ticket, LigneVente, TypeVente
 } from '../../../core/models/supermarche.models';
 
+import { OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { BarcodeScannerComponent } from "../components/BarcodeScannerComponent";
+import { ScanService } from '../../../core/services/ScanService';
+
+
 @Component({
   selector: 'app-caisse',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTooltipModule, ArticlesFrequentsComponent],
+  // ✅ FIX 1 : MatTooltipModule supprimé (Angular Material retiré du projet)
+  //            Remplacé par title= natif HTML dans le template
+  imports: [CommonModule, FormsModule, ArticlesFrequentsComponent, BarcodeScannerComponent],
   template: `
     <div class="container-fluid py-3">
       <!-- En-tête -->
@@ -29,11 +36,21 @@ import {
           </small>
         </div>
         <!-- Indicateur scanner actif -->
-        <span class="d-flex align-items-center gap-2 small text-success">
-          <span class="badge bg-success rounded-pill"
-                style="width:10px;height:10px;padding:0;animation:pulse 1.2s infinite"></span>
-          Scanner actif
-        </span>
+        <div class="d-flex align-items-center gap-2">
+          <span class="d-flex align-items-center gap-2 small {{ scanSv.modeColor() }}">
+            <span class="badge rounded-pill"
+                  [class.bg-success]="scanSv.mode() === 'camera'"
+                  [class.bg-info]="scanSv.mode() === 'usb'"
+                  style="width:10px;height:10px;padding:0;animation:pulse 1.2s infinite"></span>
+            {{ scanSv.modeLabel() }}
+          </span>
+          <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                  title="Forcer le mode caméra"
+                  (click)="scanSv.forceMode('camera')">
+            <i class="fa-solid fa-camera" style="font-size:11px"></i>
+          </button>
+        </div>
+
       </div>
 
       <div class="row g-3">
@@ -63,22 +80,23 @@ import {
           }
 
           <!-- Barre de scan -->
-          <div class="input-group mb-2">
+          <!-- ✅ FIX 2 : matTooltip remplacé par title= natif -->
+           <div class="input-group mb-2">
             <input #scanInput type="text" class="form-control form-control-lg"
                    [(ngModel)]="saisie"
                    placeholder="Code (5 chiffres) ou nom article..."
                    (keyup.enter)="ajouterParSaisie()"
                    autocomplete="off" />
             <button class="btn btn-success px-3" (click)="ajouterParSaisie()"
-                    matTooltip="Ajouter l'article">
+                    title="Ajouter l'article">
               <i class="fa-solid fa-plus"></i>
             </button>
-            <!-- Futur : bouton caméra QR -->
             <button class="btn btn-outline-secondary px-3"
-                    matTooltip="Scanner avec caméra (bientôt)">
+                     title="Forcer le mode caméra"
+                    (click)="scanSv.forceMode('camera')">
               <i class="fa-solid fa-camera"></i>
             </button>
-          </div>
+          </div> 
 
           <!-- Quantité pré-scan -->
           <div class="d-flex align-items-center gap-3 mb-3 p-2 bg-light rounded">
@@ -87,7 +105,11 @@ import {
                    [(ngModel)]="quantite" min="1" />
             <span class="small text-muted">Modifiable avant chaque scan</span>
           </div>
-
+          @if (scanSv.mode() === 'camera') {
+            <div class="mb-3">
+              <app-barcode-scanner />
+            </div>
+          }
           <!-- Notif ajout -->
           @if (notif()) {
             <div class="alert py-2 mb-2 small fw-semibold"
@@ -99,9 +121,9 @@ import {
           }
 
           <!-- Articles fréquents -->
-          <div class="mb-3">
+          <!-- <div class="mb-3">
             <app-articles-frequents (selectionner)="ajouterArticle($event)" />
-          </div>
+          </div> -->
 
           <!-- Panier -->
           <div class="d-flex justify-content-between align-items-center mb-2">
@@ -188,13 +210,16 @@ import {
           </div>
 
           <!-- Montant reçu + monnaie -->
+          <!-- ✅ FIX 3 : montantRecu est un signal → [(ngModel)] remplacé par
+               [ngModel] + (ngModelChange) pour mettre à jour le signal         -->
           <div class="card mb-3">
             <div class="card-body">
               <label class="form-label small fw-semibold">Montant reçu (F)</label>
               <input type="number" class="form-control form-control-lg"
-                     [(ngModel)]="montantRecu" min="0"
-                     (ngModelChange)="calcMonnaie()" />
-              @if (montantRecu > 0) {
+                     [ngModel]="montantRecu()"
+                     (ngModelChange)="setMontantRecu($event)"
+                     min="0" />
+              @if (montantRecu() > 0) {
                 <div class="mt-2 d-flex justify-content-between small">
                   <span class="text-muted">Monnaie à rendre</span>
                   <span class="fw-bold" [class.text-success]="monnaie() >= 0"
@@ -230,68 +255,99 @@ import {
     </style>
   `,
 })
-export class CaisseComponent {
-  protected auth  = inject(AuthService);
-  private cache   = inject(CacheService);
-  private data$   = inject(DataService);
-  private beep    = inject(BeepService);
-  private prixSv  = inject(PrixService);
-  private router  = inject(Router);
+export class CaisseComponent implements OnInit, OnDestroy {
+  protected auth = inject(AuthService);
+  private cache = inject(CacheService);
+  private data$ = inject(DataService);
+  private beep = inject(BeepService);
+  private prixSv = inject(PrixService);
+  private router = inject(Router);
+  protected scanSv = inject(ScanService);
+  private _scanSub!: Subscription;
 
   @ViewChild('scanInput') scanInput!: ElementRef<HTMLInputElement>;
 
-  saisie      = '';
-  quantite    = 1;
+  saisie = '';
+  quantite = 1;
   typeVente: TypeVente = 'DETAIL';
-  montantRecu = 0;
-  saving      = signal(false);
-  notif       = signal('');
+
+  ngOnInit(): void {
+    this._scanSub = this.scanSv.scan$.subscribe(code => {
+      this.saisie = code;
+      this.ajouterParSaisie();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this._scanSub?.unsubscribe();
+  }
+  // ✅ FIX 3 : montantRecu devient un signal pour que monnaie() computed
+  //            se réévalue automatiquement à chaque saisie
+  montantRecu = signal(0);
+
+  saving = signal(false);
+  notif = signal('');
   notifErreur = signal(false);
 
   private _panier = signal<LignePanier[]>([]);
   panier = this._panier.asReadonly();
 
-  total   = computed(() => this._panier().reduce((s, l) => s + l.sous_total, 0));
-  monnaie = computed(() => this.montantRecu - this.total());
+  total = computed(() => this._panier().reduce((s, l) => s + l.sous_total, 0));
+
+  // ✅ FIX 3 suite : monnaie() lit montantRecu() → réactif automatiquement
+  monnaie = computed(() => this.montantRecu() - this.total());
 
   numeroTicket = computed(() => {
     const t = this.cache.getTickets();
     return String(t.length + 1).padStart(5, '0');
   });
 
-  calcMonnaie() { /* déclenché par ngModelChange, monnaie() se recalcule via computed */ }
-
-  // Ajouter depuis la barre de saisie (code 5 chiffres ou nom)
-  ajouterParSaisie(): void {
-    if (!this.saisie.trim()) return;
-    const q = this.saisie.trim().toLowerCase();
-    const article = this.cache.getArticles().find(
-      a => a.code_article === q || a.nom.toLowerCase().includes(q)
-    );
-    if (!article) {
-      this.afficherNotif(`Article introuvable : ${this.saisie}`, true);
-      return;
-    }
-    this.ajouterArticle(article);
-    this.saisie = '';
-    // Remettre le focus sur le champ scan
-    setTimeout(() => this.scanInput?.nativeElement.focus(), 50);
+  // ✅ FIX 3 suite : setter appelé par (ngModelChange) dans le template
+  setMontantRecu(val: number): void {
+    this.montantRecu.set(val ?? 0);
   }
 
+
+  // Ajouter depuis la barre de saisie (code 5 chiffres ou nom)
+  // REMPLACER ajouterParSaisie() dans caisse.component.ts
+
+  ajouterParSaisie(): void {
+    const raw = this.saisie.trim();
+    if (!raw) return;
+
+    const q = raw.toLowerCase();
+
+    const article = this.cache.getArticles().find(
+      a => a.code_article.toLowerCase() === q          // ← toLowerCase() des deux côtés
+        || a.nom.toLowerCase().includes(q)
+    );
+
+    if (!article) {
+      this.afficherNotif(`❌ Article introuvable : "${raw}"`, true);
+      // Sélectionner le texte pour resaisie rapide
+      this.scanInput?.nativeElement.select();
+      return;
+    }
+
+    this.ajouterArticle(article);
+    this.saisie = '';
+    setTimeout(() => this.scanInput?.nativeElement.focus(), 50);
+  }
   // Ajouter depuis les articles fréquents ou scan validé
   ajouterArticle(article: Article): void {
-    const qte   = this.quantite || 1;
-    const prix  = this.prixSv.calculer(article, qte, this.typeVente);
+    const qte = this.quantite || 1;
+    const prix = this.prixSv.calculer(article, qte, this.typeVente);
     const exist = this._panier().findIndex(l => l.article.code_article === article.code_article);
 
     if (exist >= 0) {
-      // Augmente la quantité existante
       this._panier.update(p => p.map((l, i) => {
         if (i !== exist) return l;
-        const newQte  = l.quantite + qte;
+        const newQte = l.quantite + qte;
         const newPrix = this.prixSv.calculer(article, newQte, this.typeVente);
-        return { ...l, quantite: newQte, prix_unitaire: newPrix.prix,
-                 tarif: newPrix.tarif, sous_total: newPrix.prix * newQte };
+        return {
+          ...l, quantite: newQte, prix_unitaire: newPrix.prix,
+          tarif: newPrix.tarif, sous_total: newPrix.prix * newQte
+        };
       }));
     } else {
       this._panier.update(p => [...p, {
@@ -303,7 +359,7 @@ export class CaisseComponent {
 
     this.beep.beep();
     this.afficherNotif(`+${qte} × ${article.nom}`);
-    this.quantite = 1; // reset quantité après ajout
+    this.quantite = 1;
   }
 
   changerQte(ligne: LignePanier, delta: number): void {
@@ -312,8 +368,10 @@ export class CaisseComponent {
     const prix = this.prixSv.calculer(ligne.article, newQte, this.typeVente);
     this._panier.update(p => p.map(l =>
       l.article.code_article === ligne.article.code_article
-        ? { ...l, quantite: newQte, prix_unitaire: prix.prix,
-            tarif: prix.tarif, sous_total: prix.prix * newQte }
+        ? {
+          ...l, quantite: newQte, prix_unitaire: prix.prix,
+          tarif: prix.tarif, sous_total: prix.prix * newQte
+        }
         : l
     ));
   }
@@ -322,14 +380,19 @@ export class CaisseComponent {
     this._panier.update(p => p.filter(l => l.article.code_article !== ligne.article.code_article));
   }
 
-  vider(): void { this._panier.set([]); this.montantRecu = 0; }
+  vider(): void {
+    this._panier.set([]);
+    // ✅ FIX 3 : reset du signal, pas d'une variable simple
+    this.montantRecu.set(0);
+  }
 
-  // Recalcule tous les prix si le type vente change
   recalculerPanier(): void {
     this._panier.update(p => p.map(l => {
       const prix = this.prixSv.calculer(l.article, l.quantite, this.typeVente);
-      return { ...l, prix_unitaire: prix.prix, tarif: prix.tarif,
-               sous_total: prix.prix * l.quantite };
+      return {
+        ...l, prix_unitaire: prix.prix, tarif: prix.tarif,
+        sous_total: prix.prix * l.quantite
+      };
     }));
   }
 
@@ -337,38 +400,38 @@ export class CaisseComponent {
     if (!this._panier().length) return;
     this.saving.set(true);
 
-    const now   = new Date().toISOString();
+    const now = new Date().toISOString();
     const idCaissier = this.auth.user()!.id;
     const idTicket = `TK-${Date.now()}`;
 
     const ticket: Ticket = {
-      id_ticket:       idTicket,
-      date_heure:      now,
-      type_vente:      this.typeVente,
-      montant_total:   this.total(),
-      montant_recu:    this.montantRecu || this.total(),
-      monnaie_rendue:  Math.max(0, this.monnaie()),
-      id_caissier:     idCaissier,
-      nom_caissier:    this.auth.user()!.nom,
+      id_ticket: idTicket,
+      date_heure: now,
+      type_vente: this.typeVente,
+      montant_total: this.total(),
+      // ✅ FIX 3 : lire le signal avec ()
+      montant_recu: this.montantRecu() || this.total(),
+      monnaie_rendue: Math.max(0, this.monnaie()),
+      id_caissier: idCaissier,
+      nom_caissier: this.auth.user()!.nom,
     };
 
     const lignes: LigneVente[] = this._panier().map((l, i) => ({
-      id_ligne:               `LG-${idTicket}-${i}`,
-      id_ticket:              idTicket,
-      code_article:           l.article.code_article,
-      nom_article:            l.article.nom,
-      quantite:               l.quantite,
+      id_ligne: `LG-${idTicket}-${i}`,
+      id_ticket: idTicket,
+      code_article: l.article.code_article,
+      nom_article: l.article.nom,
+      quantite: l.quantite,
       prix_unitaire_applique: l.prix_unitaire,
-      tarif_applique:         l.tarif,
-      sous_total:             l.sous_total,
+      tarif_applique: l.tarif,
+      sous_total: l.sous_total,
     }));
 
-    await this.data$.enregistrerVente(ticket, lignes);
+    this.data$.enregistrerVente(ticket, lignes);
 
     this.saving.set(false);
     this.vider();
-    // Naviguer vers le reçu en passant l'id du ticket
-    this.router.navigate(['/recu', idTicket]);
+    // this.router.navigate(['/recu', idTicket]);
   }
 
   private notifTimer: any;
