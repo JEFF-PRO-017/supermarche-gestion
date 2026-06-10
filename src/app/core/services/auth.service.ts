@@ -18,7 +18,7 @@ const DELAI = DELAI_PROD;            // ← changer en DELAI_PROD pour la prod
 const EVENEMENTS_ACTIVITE = ['click', 'keydown', 'touchstart', 'scroll'] as const;
 
 export const ADMIN_TEST: AppUser = {
-  id: 'USR-ADMIN-TEST',
+  id: 'USR-ADMIN-TEST-2',
   username: 'admin',
   mot_de_passe: '$2b$05$QUbszWX6GvpwzIP/HFW.KuOr5Yr3NYwuVpu4.9BgRYe5puIiuip4u',
   nom: 'Administrateur Test',
@@ -28,7 +28,6 @@ export const ADMIN_TEST: AppUser = {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
 
-  private cache = inject(CacheService);
   private router = inject(Router);
   private zone = inject(NgZone);
   private $data = inject(DataService);

@@ -48,7 +48,7 @@ import { Article } from '../../../core/models/supermarche.models';
               <label class="form-label">Code article *</label>
               <div class="d-flex gap-2">
                 <input type="text" class="form-control" formControlName="code_article"
-                       placeholder="00142" maxlength="5" style="flex:1"
+                       placeholder="00000142" maxlength="8" style="flex:1"
                        [class.is-invalid]="estInvalide('code_article')" />
                 @if (!isEdit) {
                   <button type="button" class="btn-icon" style="flex-shrink:0"
@@ -57,7 +57,7 @@ import { Article } from '../../../core/models/supermarche.models';
                   </button>
                 }
               </div>
-              <div class="form-text">5 chiffres — ex: 00142</div>
+              <div class="form-text">8 chiffres — ex: 00000142</div>
             </div>
             <div>
               <label class="form-label">Nom *</label>
@@ -211,7 +211,7 @@ export class ArticleFormPageComponent implements OnInit {
   margePctGros = signal<number | null>(null);
 
   form = this.fb.group({
-    code_article: ['', [Validators.required, Validators.pattern(/^\d{5}$/)]],
+    code_article: ['', [Validators.required, Validators.pattern(/^\d{8}$/)]],
     nom: ['', Validators.required],
     description: [''],
     prix_achat: [0, [Validators.required, Validators.min(0)]],
@@ -237,7 +237,8 @@ export class ArticleFormPageComponent implements OnInit {
   }
 
   genCode(): void {
-    const code = String(Math.floor(Math.random() * 90000) + 10000)
+    const code = String(Math.floor(Math.random() * 90000000) + 10000000)
+
     const article = this.cache.getArticles().find(a => a.code_article === code)
     if (article) return this.genCode()
     this.form.get('code_article')?.setValue(code);
