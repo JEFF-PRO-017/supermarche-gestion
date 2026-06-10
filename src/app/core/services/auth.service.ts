@@ -3,13 +3,15 @@ import { Injectable, inject, signal, computed, NgZone } from '@angular/core';
 import { Router } from '@angular/router';
 import { CacheService } from './cache.service';
 import { AppUser, Role } from '../models/supermarche.models';
+import { DataService } from './data.service';
+import { compare } from 'bcryptjs';
 
 const SESSION_KEY = 'sm_user';
 // private readonly STORAGE_LAST_ACTIVITY = 'sm_last_activity';
 
 // ── Délais d'inactivité ───────────────────────────────────────
 const DELAI_PROD = 20 * 60 * 1000; // 20 minutes en production
-const DELAI_TEST = 2* 60 * 1000; //  2 minutes pour les tests
+const DELAI_TEST = 2 * 60 * 1000; //  2 minutes pour les tests
 const DELAI = DELAI_PROD;            // ← changer en DELAI_PROD pour la prod
 
 // ── Événements qui prouvent que l'utilisateur est actif ───────
@@ -18,7 +20,7 @@ const EVENEMENTS_ACTIVITE = ['click', 'keydown', 'touchstart', 'scroll'] as cons
 export const ADMIN_TEST: AppUser = {
   id: 'USR-ADMIN-TEST',
   username: 'admin',
-  mot_de_passe: 'admin0117',
+  mot_de_passe: '$2b$05$QUbszWX6GvpwzIP/HFW.KuOr5Yr3NYwuVpu4.9BgRYe5puIiuip4u',
   nom: 'Administrateur Test',
   role: 'ADMIN',
 };
@@ -29,6 +31,7 @@ export class AuthService {
   private cache = inject(CacheService);
   private router = inject(Router);
   private zone = inject(NgZone);
+  private $data = inject(DataService);
 
   private _user = signal<AppUser | null>(this.restaurerSession());
   private timer: any;
@@ -43,28 +46,35 @@ export class AuthService {
   isLoggedIn(): boolean { return this._user() !== null; }
 
   // ── Connexion ──────────────────────────────────────────────────
-  login(username: string, password: string): boolean {
-    const usersSheets = this.cache.getUsers();
-
-    const trouve = usersSheets.find(
-      u => u.username.trim() === username.trim() && u.mot_de_passe === password
-    );
-
-    if (trouve) { this.ouvrirSession(trouve); return true; }
-
-    if (username === ADMIN_TEST.username
-      && password === ADMIN_TEST.mot_de_passe
-    ) {
-      this.ouvrirSession(ADMIN_TEST);
-      return true;
+  async login(username: string, password: string): Promise<boolean> {
+    try {
+      const u = this.$data.getUsers().find(x => x.username === username);
+      if (u) {
+        const ok = await compare(password, u.mot_de_passe);
+        if (ok) {
+          await this.$data.initAppData();
+          this.ouvrirSession(u);
+          return true;
+        }
+      }
+      if (username === ADMIN_TEST.username
+        && await compare(password, ADMIN_TEST.mot_de_passe)
+      ) {
+        await this.$data.initAppData();
+        this.ouvrirSession(ADMIN_TEST);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      return false;
     }
-    return false;
   }
 
   // ── Déconnexion ────────────────────────────────────────────────
   logout(): void {
     this.arreterSurveillance();
     this._user.set(null);
+    this.$data.invalidateCache()
     sessionStorage.removeItem(SESSION_KEY);
     this.router.navigate(['/login']);
   }

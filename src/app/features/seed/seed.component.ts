@@ -4,6 +4,8 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DataService } from '../../core/services/data.service';
 import { ARTICLES_TEST, USERS_TEST } from '../../../seed-test';
+import { hash } from 'bcryptjs';
+import { UsersListComponent } from '@features/users/users-list/users-list.component';
 
 @Component({
   selector: 'app-seed',
@@ -48,7 +50,7 @@ import { ARTICLES_TEST, USERS_TEST } from '../../../seed-test';
 export class SeedComponent {
   private data$ = inject(DataService);
   loading = signal(false);
-  log     = signal<string[]>([]);
+  log = signal<string[]>([]);
 
   async lancerSeed(): Promise<void> {
     this.loading.set(true);
@@ -65,7 +67,8 @@ export class SeedComponent {
 
     // Charger les utilisateurs de test
     for (const u of USERS_TEST) {
-      this.data$.addUser(u as any);
+      const user =  { ...u, mot_de_passe: await hash(u.mot_de_passe, 5) };
+      this.data$.addUser(user as any);
       this.addLog(`✓ Utilisateur ${u.username} (${u.role})`);
     }
 

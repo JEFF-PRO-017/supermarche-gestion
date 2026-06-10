@@ -113,15 +113,12 @@ export class LoginComponent {
     this.chargement.set(true);
     this.erreur.set(false);
 
-    const succes = this.auth.login(this.username.trim(), this.password);
-
-    this.chargement.set(false);
-
-    if (succes) {
-      // Redirection vers la caisse après connexion réussie
-      this.router.navigate(['/caisse']);
-    } else {
-      this.erreur.set(true);
-    }
+    await this.auth.login(this.username.trim(), this.password)
+      .then(succes => {
+        if (!succes) this.erreur.set(true);
+        else this.router.navigate(['/caisse']);
+      })
+      .catch(() => this.erreur.set(true))
+      .finally(() => this.chargement.set(false));
   }
 }

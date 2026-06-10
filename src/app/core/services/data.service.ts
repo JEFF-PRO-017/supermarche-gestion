@@ -38,11 +38,15 @@ const BLOC = 100;
 export class DataService {
 
   constructor() {
-    console.log("in constructeur dataservice")
-    this.initAppData()
-      .then(() => console.log("end constructor dataservice "))
-      .catch(err => console.error('initAppData error', err));
+    console.log("in constructor dataservice")
+    this.ensureSheets()
+      .then(async () => {
+        console.log("end constructor dataservice ")
+        await this.chargerUsers()
+        await this.ensureAdminTest();
+      })
   }
+
 
   private cache = inject(CacheService);
   private queue = inject(SheetsQueueServiceService);
@@ -55,9 +59,8 @@ export class DataService {
   // 3. Lance en arrière-plan : tickets, lignes, mouvements du mois
   // ══════════════════════════════════════════════════════════════
   async initAppData(): Promise<void> {
-    await this.ensureSheets();
-    await this.chargerUsers();
-    await this.ensureAdminTest();
+    // await this.chargerUsers();
+    // await this.ensureAdminTest();
     await this.chargerArticles();
 
     // Arrière-plan : l'UI est déjà disponible pendant ce chargement
@@ -110,7 +113,7 @@ export class DataService {
 
   // ── Charge un mois précis à la demande (historique) ───────────
   // Ex : loadMonth(2026, 4) → avril 2026
-  async loadMonth(year: number, month: number): Promise<{ tickets: Ticket[]; lignes: LigneVente[] ,mouvements: MouvementStock[]}> {
+  async loadMonth(year: number, month: number): Promise<{ tickets: Ticket[]; lignes: LigneVente[], mouvements: MouvementStock[] }> {
     const d = new Date(year, month - 1);
     const tickets: Ticket[] = [];
     const lignes: LigneVente[] = [];

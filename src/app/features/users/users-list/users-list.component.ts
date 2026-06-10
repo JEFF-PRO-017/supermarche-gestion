@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { DataService } from '../../../core/services/data.service';
 import { AppUser, Role } from '../../../core/models/supermarche.models';
+import { hash } from 'bcryptjs';
 
 declare const bootstrap: any;
 
@@ -142,9 +143,9 @@ declare const bootstrap: any;
 })
 export class UsersListComponent {
   private data$ = inject(DataService);
-  private fb    = inject(FormBuilder);
+  private fb = inject(FormBuilder);
 
-  @ViewChild('userModal')   private userModalEl!: ElementRef;
+  @ViewChild('userModal') private userModalEl!: ElementRef;
   @ViewChild('confirmModal') private confirmModalEl!: ElementRef;
 
   users = () => this.data$.getUsers();
@@ -156,10 +157,10 @@ export class UsersListComponent {
   private editingPassword = '';
 
   form = this.fb.group({
-    nom:          ['', Validators.required],
-    username:     ['', Validators.required],
+    nom: ['', Validators.required],
+    username: ['', Validators.required],
     mot_de_passe: [''],
-    role:         ['CAISSIER' as Role, Validators.required],
+    role: ['CAISSIER' as Role, Validators.required],
   });
 
   // ── Ouvre le modal formulaire ──
@@ -182,19 +183,25 @@ export class UsersListComponent {
     new bootstrap.Modal(this.userModalEl.nativeElement).show();
   }
 
-  sauvegarder(): void {
+  async sauvegarder(): Promise<void> {
     if (this.form.invalid) return;
     this.saving.set(true);
     const v = this.form.value;
+
+    const hashedPassword = v.mot_de_passe
+      ? await hash(v.mot_de_passe, 5)
+      : (this.editingPassword);
+      
     const user: AppUser = {
-      id:           this.editingId ?? `USR-${Date.now()}`,
-      nom:          v.nom!,
-      username:     v.username!,
-      mot_de_passe: v.mot_de_passe || this.editingPassword,
-      role:         v.role as Role,
+      id: this.editingId ?? `USR-${Date.now()}`,
+      nom: v.nom!,
+      username: v.username!,
+      mot_de_passe: hashedPassword,
+      role: v.role as Role,
     };
+
     if (this.isEdit) this.data$.updateUser(user);
-    else             this.data$.addUser(user);
+    else this.data$.addUser(user);
     this.saving.set(false);
     bootstrap.Modal.getInstance(this.userModalEl.nativeElement)?.hide();
   }
@@ -214,8 +221,8 @@ export class UsersListComponent {
   // ── Helpers ──
   roleColor(role: string): { bg: string; tc: string } {
     const map: Record<string, { bg: string; tc: string }> = {
-      ADMIN:    { bg: '#FCEBEB', tc: '#A32D2D' },
-      GERANT:   { bg: '#EEEDFE', tc: '#3C3489' },
+      ADMIN: { bg: '#FCEBEB', tc: '#A32D2D' },
+      GERANT: { bg: '#EEEDFE', tc: '#3C3489' },
       CAISSIER: { bg: '#E1F5EE', tc: '#085041' },
     };
     return map[role] ?? { bg: '#f0f0f0', tc: '#555' };
@@ -223,8 +230,8 @@ export class UsersListComponent {
 
   roleBadge(role: string): string {
     const map: Record<string, string> = {
-      ADMIN:    'bg-danger',
-      GERANT:   'bg-primary',
+      ADMIN: 'bg-danger',
+      GERANT: 'bg-primary',
       CAISSIER: 'bg-success',
     };
     return map[role] ?? 'bg-secondary';
