@@ -110,15 +110,17 @@ export class DataService {
 
   // ── Charge un mois précis à la demande (historique) ───────────
   // Ex : loadMonth(2026, 4) → avril 2026
-  async loadMonth(year: number, month: number): Promise<{ tickets: Ticket[]; lignes: LigneVente[] }> {
+  async loadMonth(year: number, month: number): Promise<{ tickets: Ticket[]; lignes: LigneVente[] ,mouvements: MouvementStock[]}> {
     const d = new Date(year, month - 1);
     const tickets: Ticket[] = [];
     const lignes: LigneVente[] = [];
+    const mouvements: MouvementStock[] = [];
 
     await this.chargerEnArrierePlan(sheetMonth('SM_TICKETS', d), H.tickets, (rows) => tickets.push(...this.parse<Ticket>(rows, H.tickets)));
     await this.chargerEnArrierePlan(sheetMonth('SM_LIGNES', d), H.lignes, (rows) => lignes.push(...this.parse<LigneVente>(rows, H.lignes)));
+    await this.chargerEnArrierePlan(sheetMonth('SM_MOUVEMENTS', d), H.mouvements, (rows) => mouvements.push(...this.parse<MouvementStock>(rows, H.mouvements)));
 
-    return { tickets, lignes };
+    return { tickets, lignes, mouvements };
   }
 
   // ── Articles ───────────────────────────────────────────────────

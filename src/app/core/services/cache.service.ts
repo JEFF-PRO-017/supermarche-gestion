@@ -26,7 +26,8 @@ export class CacheService {
   );
 
   // ── Computed : tickets enrichis avec leurs lignes ─────────────
-  readonly ticketsAvecLignes = computed(() => {
+  readonly _ticketsAvecLignes = computed(() => {
+    console.log('Calcul ticketsAvecLignes');
     const lignesIdx = new Map<string, LigneVente[]>();
     for (const l of this._lignes()) {
       const arr = lignesIdx.get(l.id_ticket);
@@ -38,12 +39,26 @@ export class CacheService {
     }));
   });
 
+  //Computed : mouvements enrichis avec leur article
+  readonly _mouvementsAvecArticle = computed(() => {
+    console.log('Calcul mouvementsAvecArticle');  
+    const articlesIdx = new Map<string, Article>();
+    for (const a of this._articles()) {
+      articlesIdx.set(a.code_article, a);
+    }
+    return this._mouvements().map(m => ({
+      ...m,
+      article: articlesIdx.get(m.code_article),
+    }));
+  });
+
+
   // ── Getters ────────────────────────────────────────────────────
   getArticles()   { return this._articles(); }
   getUsers()      { return this._users(); }
-  getTickets()    { return this._tickets(); }
+  getTickets()    { return this._ticketsAvecLignes(); }
   getLignes()     { return this._lignes(); }
-  getMouvements() { return this._mouvements(); }
+  getMouvements() { return this._mouvementsAvecArticle(); }
 
   // ── Setters ────────────────────────────────────────────────────
   setArticles(d: Article[])       { this._articles.set(d); }

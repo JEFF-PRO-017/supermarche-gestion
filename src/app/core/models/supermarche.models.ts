@@ -60,7 +60,8 @@ export interface MouvementStock {
   quantite: number;
   date: string;           // ISO
   id_utilisateur: string;
-  reference: string;      // id_ticket si SORTIE_VENTE
+  reference: string;
+  article?: Article      // id_ticket si SORTIE_VENTE
 }
 
 // ── Alerte stock (calculé en mémoire, pas de feuille dédiée) ──

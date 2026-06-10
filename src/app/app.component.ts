@@ -67,7 +67,7 @@ import { environment } from '../environments/environment';
            container-fluid sur mobile, container-md sur tablette+
            padding-bottom pour ne pas passer sous la navbar basse
       ──────────────────────────────────────────────────────────── -->
-      <main class="container-fluid container-md py-3 px-3" style="padding-bottom:80px">
+      <main class="container-fluid container-md py-3 px-3 mb-5" style="padding-bottom:80px">
         <router-outlet />
       </main>
 
