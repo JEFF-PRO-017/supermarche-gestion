@@ -146,7 +146,7 @@ export class AppComponent implements OnInit {
       titre:   'Vider la file d\'attente',
       message: `Vider ${this.queue.size()} opération(s) en attente ? Ces modifications ne seront PAS envoyées à Google Sheets.`,
     });
-    if (ok) this.queue.clearQueue();
+    // if (ok) this.queue.clearQueue();
   }
 
   // Recharge depuis Sheets sans vider le cache

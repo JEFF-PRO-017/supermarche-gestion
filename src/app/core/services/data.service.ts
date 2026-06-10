@@ -150,23 +150,48 @@ export class DataService {
     this.addMouvement({ id: `MV-${Date.now()}`, code_article: code, type_mouvement: 'ENTREE', quantite: qte, date: new Date().toISOString(), id_utilisateur: idUser, reference: 'REAPPRO' });
   }
 
+  addLignes(l: LigneVente): void {
+    this.cache.addLignes([l]);
+    this.queue.enqueue({ sheetName: sheetMonth('SM_LIGNES'), rowData: this.toRow(l, H.lignes) }, 'addRow');
+  }
+  addTicket(t: Ticket): void {
+    this.cache.addTicket(t);
+    this.queue.enqueue({ sheetName: sheetMonth('SM_TICKETS'), rowData: this.toRow(t, H.tickets) }, 'addRow');
+  }
   // ── Vente : ticket + lignes + décréments stock ─────────────────
   async enregistrerVente(ticket: Ticket, lignes: LigneVente[]): Promise<void> {
-    this.cache.addTicket(ticket);
-    this.queue.enqueue({ sheetName: sheetMonth('SM_TICKETS'), rowData: this.toRow(ticket, H.tickets) }, 'addRow');
 
-    for (const l of lignes) {
-      this.cache.addLignes([l]);
-      this.queue.enqueue({ sheetName: sheetMonth('SM_LIGNES'), rowData: this.toRow(l, H.lignes) }, 'addRow');
-
+    // ── 1. VALIDATION complète AVANT toute modification ───────────
+    // Si un article manque, on sort immédiatement sans rien toucher
+    const articles = lignes.map(l => {
       const art = this.cache.getArticles().find(a => a.code_article === l.code_article);
-      if (art) {
-        const updated = { ...art, stock_actuel: Math.max(0, art.stock_actuel - l.quantite) };
-        this.cache.upsertArticle(updated);
-        this.queue.enqueue({ sheetName: SHEET.articles, row: -1, col: 1, values: this.toRow(updated, H.articles) }, 'updateRow');
-        this.addMouvement({ id: `MV-${Date.now()}-${l.code_article}`, code_article: l.code_article, type_mouvement: 'SORTIE_VENTE', quantite: l.quantite, date: ticket.date_heure, id_utilisateur: ticket.id_caissier, reference: ticket.id_ticket });
-      }
-    }
+      if (!art) throw new Error(`Article introuvable : ${l.code_article}`);
+      return art;
+    });
+
+    // ── 2. PRÉPARATION des données (aucun effet de bord ici) ───────
+    // On calcule tout ce qu'on va écrire avant d'écrire quoi que ce soit
+    const articlesUpdates = articles.map((art, i) => ({
+      ...art,
+      stock_actuel: +art.stock_actuel - lignes[i].quantite,
+    }));
+
+    const mouvements: MouvementStock[] = lignes.map((l, i) => ({
+      id: `MV-${Date.now()}-${l.code_article}`,
+      code_article: l.code_article,
+      type_mouvement: 'SORTIE_VENTE' as const,
+      quantite: l.quantite,
+      date: ticket.date_heure,
+      id_utilisateur: ticket.id_caissier,
+      reference: ticket.id_ticket,
+    }));
+
+    // ── 3. COMMIT — tout s'applique d'un coup ─────────────────────
+    // On n'arrive ici que si la validation a réussi
+    this.cache.addTicket(ticket);
+    lignes.forEach(l => this.addLignes(l));
+    articlesUpdates.forEach(a => this.updateArticle(a));
+    mouvements.forEach(m => this.addMouvement(m));
   }
 
   // ── Users ──────────────────────────────────────────────────────

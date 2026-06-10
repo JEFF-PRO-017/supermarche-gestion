@@ -3,6 +3,7 @@ import { Component, inject, computed } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { CacheService } from '../../../core/services/cache.service';
+import { environment } from 'src/environments/environment.prod';
 
 @Component({
   selector: 'app-recu',
@@ -27,8 +28,8 @@ import { CacheService } from '../../../core/services/cache.service';
             <div class="card-body">
               <!-- En-tête -->
               <div class="text-center pb-3 border-bottom border-dashed mb-3">
-                <h5 class="fw-bold mb-0">Supermarché Étoile</h5>
-                <small class="text-muted d-block">Yaoundé, Cameroun · Tél : 6XX XXX XXX</small>
+                <h5 class="fw-bold mb-0">{{ app_name }}</h5>
+                <small class="text-muted d-block">Douala, Cameroun · Tél : {{ app_tel }}</small>
                 <div class="mt-2">
                   <code class="small">{{ d.ticket.id_ticket }}</code>
                 </div>
@@ -109,6 +110,8 @@ export class RecuComponent {
   private cache  = inject(CacheService);
   private route  = inject(ActivatedRoute);
   private router = inject(Router);
+  app_name = environment.app_name;
+  app_tel = environment.app_tel;
 
   // Ticket + lignes depuis le cache (déjà enregistrés par CaisseComponent)
   data = computed(() => {

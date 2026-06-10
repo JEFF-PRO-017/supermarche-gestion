@@ -339,6 +339,11 @@ export class CaisseComponent implements OnInit, OnDestroy {
     const prix = this.prixSv.calculer(article, qte, this.typeVente);
     const exist = this._panier().findIndex(l => l.article.code_article === article.code_article);
 
+    if(qte > article.stock_actuel) {
+      this.afficherNotif(`Stock insuffisant pour ${article.nom} (max ${article.stock_actuel})`, true);
+      this.quantite = 1;
+      return;
+    }
     if (exist >= 0) {
       this._panier.update(p => p.map((l, i) => {
         if (i !== exist) return l;
@@ -365,6 +370,10 @@ export class CaisseComponent implements OnInit, OnDestroy {
   changerQte(ligne: LignePanier, delta: number): void {
     const newQte = ligne.quantite + delta;
     if (newQte <= 0) { this.supprimer(ligne); return; }
+    if (newQte > ligne.article.stock_actuel) {
+      this.afficherNotif(`Stock insuffisant pour ${ligne.article.nom} (max ${ligne.article.stock_actuel})`, true);
+      return;
+    }
     const prix = this.prixSv.calculer(ligne.article, newQte, this.typeVente);
     this._panier.update(p => p.map(l =>
       l.article.code_article === ligne.article.code_article
@@ -400,38 +409,45 @@ export class CaisseComponent implements OnInit, OnDestroy {
     if (!this._panier().length) return;
     this.saving.set(true);
 
-    const now = new Date().toISOString();
-    const idCaissier = this.auth.user()!.id;
-    const idTicket = `TK-${Date.now()}`;
+    try {
+      const now = new Date().toISOString();
+      const idCaissier = this.auth.user()!.id;
+      const idTicket = `TK-${Date.now()}`;
 
-    const ticket: Ticket = {
-      id_ticket: idTicket,
-      date_heure: now,
-      type_vente: this.typeVente,
-      montant_total: this.total(),
-      // ✅ FIX 3 : lire le signal avec ()
-      montant_recu: this.montantRecu() || this.total(),
-      monnaie_rendue: Math.max(0, this.monnaie()),
-      id_caissier: idCaissier,
-      nom_caissier: this.auth.user()!.nom,
-    };
+      const ticket: Ticket = {
+        id_ticket: idTicket,
+        date_heure: now,
+        type_vente: this.typeVente,
+        montant_total: this.total(),
+        montant_recu: this.montantRecu() || this.total(),
+        monnaie_rendue: Math.max(0, this.monnaie()),
+        id_caissier: idCaissier,
+        nom_caissier: this.auth.user()!.nom,
+      };
 
-    const lignes: LigneVente[] = this._panier().map((l, i) => ({
-      id_ligne: `LG-${idTicket}-${i}`,
-      id_ticket: idTicket,
-      code_article: l.article.code_article,
-      nom_article: l.article.nom,
-      quantite: l.quantite,
-      prix_unitaire_applique: l.prix_unitaire,
-      tarif_applique: l.tarif,
-      sous_total: l.sous_total,
-    }));
+      const lignes: LigneVente[] = this._panier().map((l, i) => ({
+        id_ligne: `LG-${idTicket}-${i}`,
+        id_ticket: idTicket,
+        code_article: l.article.code_article,
+        nom_article: l.article.nom,
+        quantite: l.quantite,
+        prix_unitaire_applique: l.prix_unitaire,
+        tarif_applique: l.tarif,
+        sous_total: l.sous_total,
+      }));
 
-    this.data$.enregistrerVente(ticket, lignes);
+      await this.data$.enregistrerVente(ticket, lignes);
 
-    this.saving.set(false);
-    this.vider();
-    // this.router.navigate(['/recu', idTicket]);
+      this.vider();
+      this.router.navigate(['/recu', idTicket]);
+
+    } catch (err: any) {
+      // Affiche le message d'erreur dans un signal — à lier dans le template
+      this.afficherNotif(err?.message ?? 'Erreur lors de l\'enregistrement de la vente');
+    } finally {
+      // S'exécute toujours, succès ou échec
+      this.saving.set(false);
+    }
   }
 
   private notifTimer: any;
@@ -439,6 +455,6 @@ export class CaisseComponent implements OnInit, OnDestroy {
     this.notif.set(msg);
     this.notifErreur.set(erreur);
     clearTimeout(this.notifTimer);
-    this.notifTimer = setTimeout(() => this.notif.set(''), 2000);
+    this.notifTimer = setTimeout(() => this.notif.set(''), 5000);
   }
 }

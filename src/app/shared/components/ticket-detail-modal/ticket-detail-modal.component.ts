@@ -1,6 +1,7 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Ticket, LigneVente } from '../../../core/models/supermarche.models';
+import { environment } from 'src/environments/environment.prod';
 
 export interface TicketDetailData {
   ticket: Ticket;
@@ -17,8 +18,8 @@ export interface TicketDetailData {
         <div class="modal-content">
 
           <div class="modal-header text-center d-block border-bottom-0 pb-0">
-            <h5 class="fw-bold mb-0">Supermarché Étoile</h5>
-            <small class="text-muted">Yaoundé, Cameroun</small>
+            <h5 class="fw-bold mb-0">{{app_name}}</h5>
+            <small class="text-muted">Douala, Cameroun</small>
             <div class="mt-2 d-flex justify-content-between align-items-center px-2">
               <span class="badge {{ data.ticket.type_vente === 'GROSSISTE' ? 'bg-info' : 'bg-secondary' }}">
                 {{ data.ticket.type_vente }}
@@ -74,12 +75,12 @@ export interface TicketDetailData {
     </div>
   `,
 })
-export class TicketDetailModalComponent implements OnInit{
+export class TicketDetailModalComponent implements OnInit {
   @Input() data!: TicketDetailData;
   @Input() closeModal!: (result?: any) => void;
-
+  app_name = environment.app_name;
   ngOnInit() {
-  console.log(this.data)
+    console.log(this.data)
     // if (this.data?.article) {
     //   this.form.patchValue(this.data.article);
     //   this.form.get('code_article')?.disable();
