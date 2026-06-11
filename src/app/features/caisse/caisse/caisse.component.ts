@@ -121,9 +121,9 @@ import { ScanService } from '../../../core/services/ScanService';
           }
 
           <!-- Articles fréquents -->
-          <div class="mb-3">
+          <!-- <div class="mb-3">
             <app-articles-frequents (selectionner)="ajouterArticle($event)" />
-          </div>
+          </div> -->
 
           <!-- Panier -->
           <div class="d-flex justify-content-between align-items-center mb-2">
