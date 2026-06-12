@@ -193,7 +193,7 @@ export class DataService {
 
     // ── 3. COMMIT — tout s'applique d'un coup ─────────────────────
     // On n'arrive ici que si la validation a réussi
-    this.cache.addTicket(ticket);
+    this.addTicket(ticket);
     lignes.forEach(l => this.addLignes(l));
     articlesUpdates.forEach(a => this.updateArticle(a));
     mouvements.forEach(m => this.addMouvement(m));

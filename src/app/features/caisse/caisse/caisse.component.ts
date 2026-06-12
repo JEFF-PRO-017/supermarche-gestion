@@ -439,7 +439,7 @@ export class CaisseComponent implements OnInit, OnDestroy {
       await this.data$.enregistrerVente(ticket, lignes);
 
       this.vider();
-      this.router.navigate(['/recu', idTicket]);
+      // this.router.navigate(['/recu', idTicket]);
 
     } catch (err: any) {
       // Affiche le message d'erreur dans un signal — à lier dans le template

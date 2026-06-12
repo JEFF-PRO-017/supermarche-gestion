@@ -116,7 +116,7 @@ interface MoisOption { label: string; year: number; month: number; jour?: number
           </li>
           <li class="nav-item">
             <button class="nav-link" [class.active]="onglet === 'mouvements'" (click)="onglet = 'mouvements'">
-              <i class="fa-solid fa-exchange-alt me-1"></i>Réapprovisionnements
+              <i class="fa-solid fa-exchange-alt me-1"></i>Mouvements
             </button>
           </li>
         </ul>
